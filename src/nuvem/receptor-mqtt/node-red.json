@@ -1,0 +1,49 @@
+[
+    {
+        "id": "28e6de1a82e098fe",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "3919f0dbb5a6cb44",
+        "type": "mqtt in",
+        "z": "28e6de1a82e098fe",
+        "name": "",
+        "topic": "sensores",
+        "qos": "2",
+        "datatype": "json",
+        "broker": "",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 240,
+        "y": 520,
+        "wires": [
+            [
+                "0cda606d3f7e7e97"
+            ]
+        ]
+    },
+    {
+        "id": "0cda606d3f7e7e97",
+        "type": "function",
+        "z": "28e6de1a82e098fe",
+        "name": "function 1",
+        "func": "\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 500,
+        "y": 540,
+        "wires": [
+            []
+        ]
+    }
+]

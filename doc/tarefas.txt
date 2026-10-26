@@ -1,0 +1,10 @@
+- Modelar banco de dados - Bernardo
+- Modelar mensagens do MQTT - Feito
+- Modelar mensagens do Lora - Feito
+- Escrever código do balão - Marcelo
+- Escrever código do centro de comando - Marcelo
+- Escrever código da interface web - Sasha
+- Fazer "código" do NODE-Red - Bernardo
+- Projetar PCI - Sasha
+- Confeccionar PCI - Depois
+- Soldar componentes no PCI - Depois

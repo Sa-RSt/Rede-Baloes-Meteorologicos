@@ -1,0 +1,20 @@
+### [ Mensagem MQTT: centro de comando → nuvem ] ###
+
+topico: sensores
+{
+    "sensores": [
+      {"nome": "Gás", "leitura": 4095, "balao": 0},
+      {"nome": "Umidade", "leitura": 4095, "balao": 0},
+      {"nome": "Temperatura", "leitura": 4095, "balao": 0},
+      {"nome": "Pressão", "leitura": 4095, "balao": 0},
+      {"nome": "Gás", "leitura": 4095, "balao": 254},
+      {"nome": "Umidade", "leitura": 4095, "balao": 254},
+      {"nome": "Temperatura", "leitura": 4095, "balao": 254},
+      {"nome": "Pressão", "leitura": 4095, "balao": 254},
+    ]
+}
+
+### [ Mensagem Lora: balão → centro de comando ] ###
+
+ID balão (1 byte) | Sensores (4 x 12 bits = 48 bits = 6 bytes) | XOR (1 byte)
+Sensores = gas << 36 | umidade << 24 | temperatura << 12 | pressao

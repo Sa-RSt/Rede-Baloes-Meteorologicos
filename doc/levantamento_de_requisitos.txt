@@ -1,0 +1,10 @@
+- O sistema deve suportar múltiplos balões.
+- O sistema deve suportar múltiplos centros de comando.
+- O serviço de nuvem deve ter um banco de dados com histórico dos dados coletados pelos balões.
+- O balão deve ter sensor de temperatura, umidade, pressão e gases.
+- O balão deve enviar as leituras dos sensores ao centro de comando via Lora.
+- O centro de comando deve enviar as leituras recebidas ao serviço de nuvem via WiFi.
+? O centro de comando deve suportar atualização remota de firmware via WiFi.
+- Os sensores devem estar instalados na placa de circuito impresso do balão.
+- O serviço de nuvem, implementado em NODE-Red, deve armazenar os dados recebidos dos centros de comando via MQTT em um banco de dados.
+- Uma interface web deve mostrar os conteúdos do banco de dados.
