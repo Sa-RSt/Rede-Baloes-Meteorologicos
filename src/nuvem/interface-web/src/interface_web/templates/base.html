@@ -62,14 +62,13 @@
         type="button"
         data-bs-toggle="collapse"
         data-bs-target="#stationTree"
-        aria-expanded="true"
         aria-controls="stationTree">
         <span aria-hidden="true">&#9776;</span>
         Estações e sensores
         <span class="badge rounded-pill text-bg-secondary">{{ station_tree|length }}</span>
       </button>
 
-      <div class="collapse show" id="stationTree">
+      <div class="collapse" id="stationTree">
         {% if station_tree %}
         <ul class="station-tree list-unstyled mb-0 mt-2">
           {% for tree_station_id, sensors in station_tree.items() %}
