@@ -29,18 +29,6 @@
     </div>
   </div>
 
-  {% if other_sensors %}
-  <div class="alert alert-light border d-flex flex-wrap align-items-center gap-2 py-2">
-    <span class="small text-uppercase text-muted me-1">Outros sensores desta estação:</span>
-    {% for other in other_sensors %}
-      <a class="btn btn-sm btn-outline-primary"
-         href="{{ url_for('main.readings', station_id=station_id, sensor_type=other) }}">
-        {{ other }}
-      </a>
-    {% endfor %}
-  </div>
-  {% endif %}
-
   <div class="card shadow-sm">
     <div class="card-body p-0">
       <div class="table-responsive readings-table-wrapper">
