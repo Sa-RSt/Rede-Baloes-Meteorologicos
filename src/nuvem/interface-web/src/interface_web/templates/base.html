@@ -37,16 +37,16 @@
           </li>
         </ul>
 
-        {% if station_id is defined and station_sensors is defined %}
+        {% if balao_id is defined and balloon_sensors is defined %}
         <div class="navbar-station-links d-flex flex-wrap align-items-center gap-2 py-2 py-lg-0">
           <span class="navbar-text small text-uppercase text-secondary-emphasis">
-            Estação {{ station_id }}
+            {{ balao_nome }}
           </span>
-          {% for sensor in station_sensors %}
+          {% for nav_sensor in balloon_sensors %}
             <a
-              class="btn btn-sm {% if sensor == sensor_type %}btn-light text-dark fw-semibold{% else %}btn-outline-light{% endif %}"
-              href="{{ url_for('main.readings', station_id=station_id, sensor_type=sensor) }}">
-              {{ sensor }}
+              class="btn btn-sm {% if nav_sensor == sensor %}btn-light text-dark fw-semibold{% else %}btn-outline-light{% endif %}"
+              href="{{ url_for('main.readings', balao_id=balao_id, sensor=nav_sensor) }}">
+              {{ nav_sensor }}
             </a>
           {% endfor %}
         </div>
@@ -64,36 +64,36 @@
         data-bs-target="#stationTree"
         aria-controls="stationTree">
         <span aria-hidden="true">&#9776;</span>
-        Estações e sensores
-        <span class="badge rounded-pill text-bg-secondary">{{ station_tree|length }}</span>
+        Balões e sensores
+        <span class="badge rounded-pill text-bg-secondary">{{ balloon_tree|length }}</span>
       </button>
 
       <div class="collapse" id="stationTree">
-        {% if station_tree %}
+        {% if balloon_tree %}
         <ul class="station-tree list-unstyled mb-0 mt-2">
-          {% for tree_station_id, sensors in station_tree.items() %}
-            {% set is_current_station = station_id is defined and tree_station_id == station_id %}
-            <li class="station-tree-node{% if is_current_station %} is-current{% endif %}">
+          {% for tree_balao_id, balloon in balloon_tree.items() %}
+            {% set is_current_balloon = balao_id is defined and tree_balao_id == balao_id %}
+            <li class="station-tree-node{% if is_current_balloon %} is-current{% endif %}">
               <div class="station-tree-header">
                 <button
                   class="station-tree-toggle"
                   type="button"
                   aria-expanded="false"
-                  aria-label="Expandir sensores da estação {{ tree_station_id }}">
+                  aria-label="Expandir sensores do balão {{ balloon.nome }}">
                   <span class="tree-chevron" aria-hidden="true">&#9656;</span>
                 </button>
                 <a class="station-tree-station"
-                   href="{{ url_for('main.station', station_id=tree_station_id) }}">
-                  Estação {{ tree_station_id }}
+                   href="{{ url_for('main.balloon', balao_id=tree_balao_id) }}">
+                  {{ balloon.nome }}
                 </a>
-                <span class="badge rounded-pill text-bg-light">{{ sensors|length }}</span>
+                <span class="badge rounded-pill text-bg-light">{{ balloon.sensors|length }}</span>
               </div>
               <ul class="station-tree-leaves list-unstyled ms-4 mb-1">
-                {% for tree_sensor in sensors %}
+                {% for tree_sensor in balloon.sensors %}
                 <li>
                   <a
-                    class="station-tree-leaf{% if is_current_station and tree_sensor == sensor_type %} active{% endif %}"
-                    href="{{ url_for('main.readings', station_id=tree_station_id, sensor_type=tree_sensor) }}">
+                    class="station-tree-leaf{% if is_current_balloon and tree_sensor == sensor %} active{% endif %}"
+                    href="{{ url_for('main.readings', balao_id=tree_balao_id, sensor=tree_sensor) }}">
                     {{ tree_sensor }}
                   </a>
                 </li>
@@ -103,7 +103,7 @@
           {% endfor %}
         </ul>
         {% else %}
-        <p class="text-muted small mb-0 mt-2">Nenhuma estação encontrada no banco de dados.</p>
+        <p class="text-muted small mb-0 mt-2">Nenhum balão encontrado no banco de dados.</p>
         {% endif %}
       </div>
     </div>

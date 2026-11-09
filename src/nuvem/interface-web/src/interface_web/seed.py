@@ -8,23 +8,40 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from faker import Faker
+
+fake = Faker("pt_BR")
+
 DEFAULT_SENSOR_TYPES = ("Temperatura", "Umidade", "Pressão", "Gás")
-DEFAULT_STATIONS = 4
+DEFAULT_BALLOONS = 4
 DEFAULT_READINGS_PER_SENSOR = 100
 DEFAULT_DAYS = 7
 VALUE_MIN = 0
 VALUE_MAX = 4095  # 12-bit sensor reading
 
+# (balao_id, nome, criado_em)
+BalloonRow = tuple[int, str, datetime | None]
+# (balao_id, sensor, leitura, data_hora)
+ReadingRow = tuple[int, str, int | float, datetime]
+
 SCHEMA = """
-CREATE TABLE readings (
-    sensor_type TEXT NOT NULL,
-    value INTEGER NOT NULL CHECK (value >= 0),
-    station_id INTEGER NOT NULL,
-    timestamp DATETIME NOT NULL,
-    PRIMARY KEY (sensor_type, station_id, timestamp)
+CREATE TABLE IF NOT EXISTS Baloes (
+    id INTEGER PRIMARY KEY,
+    nome VARCHAR(50) NOT NULL,
+    criado_em DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX ix_readings_timestamp ON readings (timestamp);
+CREATE TABLE IF NOT EXISTS Leituras (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    balao_id INTEGER NOT NULL,
+    sensor VARCHAR(50) NOT NULL,
+    leitura NUMERIC NOT NULL,
+    data_hora DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (balao_id) REFERENCES Baloes(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_leituras_balao ON Leituras(balao_id);
+CREATE INDEX IF NOT EXISTS idx_leituras_data ON Leituras(data_hora);
 """
 
 
@@ -33,9 +50,21 @@ def default_database_path() -> Path:
     return Path(__file__).resolve().parents[2] / "sqlite.db"
 
 
+def generate_balloons(
+    balloon_ids: Sequence[int],
+    *,
+    created_at: datetime | None = None,
+) -> list[BalloonRow]:
+    """Build the auxiliary balloon records for the supplied IDs."""
+    if len(set(balloon_ids)) != len(balloon_ids):
+        raise ValueError("balloon_ids must not contain duplicates")
+
+    return [(balloon_id, fake.bairro(), created_at) for balloon_id in balloon_ids]
+
+
 def generate_readings(
     *,
-    station_ids: Sequence[int],
+    balloon_ids: Sequence[int],
     sensor_types: Sequence[str] = DEFAULT_SENSOR_TYPES,
     readings_per_sensor: int = DEFAULT_READINGS_PER_SENSOR,
     start: datetime,
@@ -43,13 +72,11 @@ def generate_readings(
     value_min: int = VALUE_MIN,
     value_max: int = VALUE_MAX,
     rng: random.Random | None = None,
-) -> list[tuple[str, int, int, datetime]]:
-    """Generate random readings.
+) -> list[ReadingRow]:
+    """Generate random readings for every balloon/sensor pair.
 
-    Every station/sensor pair receives the same timestamps, which mimics a
-    message containing all sensors of a balloon at once. Timestamps are unique
-    within each pair, so the (sensor_type, station_id, timestamp) primary key is
-    never violated.
+    Every pair receives the same timestamps, which mimics a message containing
+    all sensors of a balloon at once. Timestamps are unique within each pair.
     """
     if readings_per_sensor < 0:
         raise ValueError("readings_per_sensor must be zero or positive")
@@ -59,8 +86,8 @@ def generate_readings(
         raise ValueError("value_min must be zero or positive")
     if value_max < value_min:
         raise ValueError("value_max must be greater than or equal to value_min")
-    if len(set(station_ids)) != len(station_ids):
-        raise ValueError("station_ids must not contain duplicates")
+    if len(set(balloon_ids)) != len(balloon_ids):
+        raise ValueError("balloon_ids must not contain duplicates")
     if len(set(sensor_types)) != len(sensor_types):
         raise ValueError("sensor_types must not contain duplicates")
 
@@ -74,16 +101,16 @@ def generate_readings(
         )
 
     offsets = sorted(rng.sample(range(window_seconds + 1), readings_per_sensor))
-    readings: list[tuple[str, int, int, datetime]] = []
+    readings: list[ReadingRow] = []
 
-    for station_id in station_ids:
+    for balloon_id in balloon_ids:
         for sensor_type in sensor_types:
             for offset in offsets:
                 readings.append(
                     (
+                        balloon_id,
                         sensor_type,
                         rng.randint(value_min, value_max),
-                        station_id,
                         start + timedelta(seconds=offset),
                     )
                 )
@@ -94,11 +121,12 @@ def generate_readings(
 
 def create_database(
     database: str | Path,
-    readings: Sequence[tuple[str, int, int, datetime]],
+    balloons: Sequence[BalloonRow],
+    readings: Sequence[ReadingRow],
     *,
     overwrite: bool = False,
 ) -> Path:
-    """Create a SQLite database containing the supplied readings."""
+    """Create a SQLite database containing the supplied balloons and readings."""
     database = Path(database).expanduser().resolve()
 
     if database.exists():
@@ -115,26 +143,42 @@ def create_database(
 
     database.parent.mkdir(parents=True, exist_ok=True)
 
-    rows = [
+    balloon_rows = [
         (
-            sensor_type,
-            value,
-            station_id,
-            timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            balloon_id,
+            nome,
+            criado_em.strftime("%Y-%m-%d %H:%M:%S") if criado_em else None,
         )
-        for sensor_type, value, station_id, timestamp in readings
+        for balloon_id, nome, criado_em in balloons
+    ]
+    reading_rows = [
+        (
+            balloon_id,
+            sensor,
+            leitura,
+            data_hora.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        for balloon_id, sensor, leitura, data_hora in readings
     ]
 
     connection = sqlite3.connect(database)
     try:
+        connection.execute("PRAGMA foreign_keys = ON")
         connection.executescript(SCHEMA)
         with connection:
             connection.executemany(
                 """
-                INSERT INTO readings (sensor_type, value, station_id, timestamp)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO Baloes (id, nome, criado_em)
+                VALUES (?, ?, COALESCE(?, CURRENT_TIMESTAMP))
                 """,
-                rows,
+                balloon_rows,
+            )
+            connection.executemany(
+                """
+                INSERT INTO Leituras (balao_id, sensor, leitura, data_hora)
+                VALUES (?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))
+                """,
+                reading_rows,
             )
     finally:
         connection.close()
@@ -156,18 +200,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="output SQLite file (default: sqlite.db next to pyproject.toml)",
     )
     parser.add_argument(
+        "--baloes",
         "--stations",
+        dest="balloons",
         type=int,
-        default=DEFAULT_STATIONS,
-        help=f"number of stations, IDs 0..N-1 (default: {DEFAULT_STATIONS})",
+        default=DEFAULT_BALLOONS,
+        help=(
+            "number of balloons, IDs 1..N "
+            f"(default: {DEFAULT_BALLOONS}; --stations is accepted as an alias)"
+        ),
     )
     parser.add_argument(
         "--readings",
         type=int,
         default=DEFAULT_READINGS_PER_SENSOR,
         help=(
-            "readings per station/sensor pair "
-            f"(default: {DEFAULT_READINGS_PER_SENSOR})"
+            f"readings per balloon/sensor pair (default: {DEFAULT_READINGS_PER_SENSOR})"
         ),
     )
     parser.add_argument(
@@ -194,8 +242,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.stations < 1:
-        parser.error("--stations must be at least 1")
+    if args.balloons < 1:
+        parser.error("--baloes must be at least 1")
     if args.days < 1:
         parser.error("--days must be at least 1")
 
@@ -203,24 +251,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     rng = random.Random(args.seed)
     end = datetime.now().replace(microsecond=0)
     start = end - timedelta(days=args.days)
-    station_ids = list(range(args.stations))
+    balloon_ids = list(range(1, args.balloons + 1))
 
     try:
+        balloons = generate_balloons(balloon_ids, created_at=start)
         readings = generate_readings(
-            station_ids=station_ids,
+            balloon_ids=balloon_ids,
             sensor_types=DEFAULT_SENSOR_TYPES,
             readings_per_sensor=args.readings,
             start=start,
             end=end,
             rng=rng,
         )
-        create_database(database, readings, overwrite=args.force)
+        create_database(database, balloons, readings, overwrite=args.force)
     except (ValueError, OSError, sqlite3.Error) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
     print(f"Created {database}")
-    print(f"  stations:          {len(station_ids)} ({station_ids[0]}..{station_ids[-1]})")
+    print(
+        f"  balloons:          {len(balloon_ids)} ({balloon_ids[0]}..{balloon_ids[-1]})"
+    )
     print(f"  sensor types:      {', '.join(DEFAULT_SENSOR_TYPES)}")
     print(f"  readings per pair: {args.readings}")
     print(f"  total readings:    {len(readings)}")

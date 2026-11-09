@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -47,15 +48,28 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
             return value
         return value.strftime("%Y-%m-%d %H:%M:%S")
 
+    @app.template_filter("number")
+    def format_number(value: Any) -> str:
+        """Render NUMERIC values without trailing zeros or exponent notation."""
+        if value is None:
+            return "\u2014"
+        if isinstance(value, Decimal):
+            if value == value.to_integral_value():
+                return str(int(value))
+            return format(value.normalize(), "f")
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        return str(value)
+
     @app.cli.command("init-db")
     def init_db_command() -> None:
-        """Create the readings table if it does not exist."""
+        """Create the Baloes and Leituras tables if they do not exist."""
         db.create_all()
         click.echo("Banco de dados inicializado.")
 
     # For this small read-only application it is convenient to make sure the
-    # table exists as soon as the app is created. create_all() is a no-op when
-    # the table (and the database file) already exist.
+    # tables exist as soon as the app is created. create_all() is a no-op when
+    # the tables (and the database file) already exist.
     with app.app_context():
         db.create_all()
 

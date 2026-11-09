@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ sensor_type }} &middot; Estação {{ station_id }}{% endblock %}
+{% block title %}{{ sensor }} &middot; {{ balao_nome }}{% endblock %}
 
 {% block content %}
 <main class="container-fluid py-4">
@@ -8,16 +8,16 @@
     <div>
       <nav aria-label="breadcrumb">
         <ol class="breadcrumb mb-1">
-          <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Estações</a></li>
+          <li class="breadcrumb-item"><a href="{{ url_for('main.index') }}">Balões</a></li>
           <li class="breadcrumb-item">
-            <a href="{{ url_for('main.station', station_id=station_id) }}">Estação {{ station_id }}</a>
+            <a href="{{ url_for('main.balloon', balao_id=balao_id) }}">{{ balao_nome }}</a>
           </li>
-          <li class="breadcrumb-item active" aria-current="page">{{ sensor_type }}</li>
+          <li class="breadcrumb-item active" aria-current="page">{{ sensor }}</li>
         </ol>
       </nav>
       <h1 class="h3 mb-0">
-        {{ sensor_type }}
-        <span class="text-muted fs-5">&mdash; Estação {{ station_id }}</span>
+        {{ sensor }}
+        <span class="text-muted fs-5">&mdash; {{ balao_nome }}</span>
       </h1>
     </div>
 
@@ -34,15 +34,15 @@
       <div class="table-responsive readings-table-wrapper">
         <table class="table table-striped table-hover align-middle mb-0" id="readings-table">
           <caption class="visually-hidden">
-            Leituras de {{ sensor_type }} da estação {{ station_id }}, ordenadas por timestamp decrescente.
+            Leituras de {{ sensor }} do balão {{ balao_nome }}, ordenadas por data/hora decrescente.
           </caption>
           <thead class="table-dark">
             <tr>
               <th scope="col" class="text-end" style="width: 5rem;">#</th>
-              <th scope="col">Timestamp</th>
-              <th scope="col" class="text-end">Valor</th>
+              <th scope="col">Data/Hora</th>
+              <th scope="col" class="text-end">Leitura</th>
               <th scope="col">Sensor</th>
-              <th scope="col" class="text-end">Estação</th>
+              <th scope="col">Balão</th>
             </tr>
           </thead>
           <tbody>
@@ -50,18 +50,18 @@
             <tr>
               <td class="text-end text-muted">{{ loop.index }}</td>
               <td>
-                <time datetime="{{ reading.timestamp.isoformat() if reading.timestamp else '' }}">
-                  {{ reading.timestamp|timestamp }}
+                <time datetime="{{ reading.data_hora.isoformat() if reading.data_hora else '' }}">
+                  {{ reading.data_hora|timestamp }}
                 </time>
               </td>
-              <td class="text-end"><span class="reading-value">{{ reading.value }}</span></td>
-              <td>{{ reading.sensor_type }}</td>
-              <td class="text-end">{{ reading.station_id }}</td>
+              <td class="text-end"><span class="reading-value">{{ reading.leitura|number }}</span></td>
+              <td>{{ reading.sensor }}</td>
+              <td>{{ balao_nome }}</td>
             </tr>
           {% else %}
             <tr>
               <td colspan="5" class="text-center text-muted py-5">
-                Nenhuma leitura encontrada para este sensor e estação.
+                Nenhuma leitura encontrada para este sensor e balão.
               </td>
             </tr>
           {% endfor %}

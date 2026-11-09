@@ -1,95 +1,107 @@
 from __future__ import annotations
 
+from typing import Any
+
 from flask import Blueprint, abort, render_template
 from sqlalchemy import func, select
 
 from . import db
-from .models import Reading
+from .models import Balloon, Reading
 
 bp = Blueprint("main", __name__)
 
 
-def station_tree() -> dict[int, list[str]]:
-    """Return {station_id: [sensor_type, ...]} for the whole database."""
+def balloon_tree() -> dict[int, dict[str, Any]]:
+    """Return every balloon with its known sensor types.
+
+    The result has the shape ``{balao_id: {"nome": str, "sensors": [...]}}``.
+    Balloons without readings are included, with an empty sensor list.
+    """
     rows = db.session.execute(
-        select(Reading.station_id, Reading.sensor_type)
+        select(Balloon.id, Balloon.nome, Reading.sensor)
+        .outerjoin(Reading, Reading.balao_id == Balloon.id)
         .distinct()
-        .order_by(Reading.station_id, Reading.sensor_type)
+        .order_by(Balloon.id, Reading.sensor)
     ).all()
 
-    tree: dict[int, list[str]] = {}
-    for station_id, sensor_type in rows:
-        tree.setdefault(station_id, []).append(sensor_type)
+    tree: dict[int, dict[str, Any]] = {}
+    for balao_id, nome, sensor in rows:
+        entry = tree.setdefault(balao_id, {"nome": nome, "sensors": []})
+        if sensor is not None:
+            entry["sensors"].append(sensor)
     return tree
 
 
 @bp.get("/")
 def index():
-    """Show every station as a card linking to its sensor page."""
-    return render_template("index.html", station_tree=station_tree())
+    """Show every balloon as a card linking to its sensor page."""
+    return render_template("index.html", balloon_tree=balloon_tree())
 
 
-@bp.get("/<int:station_id>")
-def station(station_id: int):
-    """Show every sensor of a station as a card linking to its table."""
-    tree = station_tree()
-    station_sensors = tree.get(station_id)
+@bp.get("/<int:balao_id>")
+def balloon(balao_id: int):
+    """Show every sensor of a balloon as a card linking to its table."""
+    tree = balloon_tree()
+    entry = tree.get(balao_id)
 
-    if not station_sensors:
+    if entry is None:
         abort(404)
 
     stats_rows = db.session.execute(
         select(
-            Reading.sensor_type,
+            Reading.sensor,
             func.count().label("reading_count"),
-            func.max(Reading.timestamp).label("latest_timestamp"),
+            func.max(Reading.data_hora).label("latest_timestamp"),
         )
-        .where(Reading.station_id == station_id)
-        .group_by(Reading.sensor_type)
+        .where(Reading.balao_id == balao_id)
+        .group_by(Reading.sensor)
     ).all()
-    stats = {row.sensor_type: row for row in stats_rows}
+    stats = {row.sensor: row for row in stats_rows}
 
     return render_template(
-        "station.html",
-        station_tree=tree,
-        station_id=station_id,
-        station_sensors=station_sensors,
+        "balloon.html",
+        balloon_tree=tree,
+        balao_id=balao_id,
+        balao_nome=entry["nome"],
+        balloon_sensors=entry["sensors"],
         stats=stats,
     )
 
 
-@bp.get("/<int:station_id>/<sensor_type>")
-def readings(station_id: int, sensor_type: str):
-    tree = station_tree()
-    station_sensors = tree.get(station_id, [])
+@bp.get("/<int:balao_id>/<sensor>")
+def readings(balao_id: int, sensor: str):
+    tree = balloon_tree()
+    entry = tree.get(balao_id)
+    balloon_sensors = entry["sensors"] if entry is not None else []
 
-    # Only pages that correspond to a real sensor/station pair exist.
-    if sensor_type not in station_sensors:
+    # Only pages that correspond to a real balloon/sensor pair exist.
+    if entry is None or sensor not in balloon_sensors:
         abort(404)
 
     # Select columns instead of entities: this keeps every row even if the
-    # underlying table has no primary key (or has duplicate timestamps).
+    # underlying table contains duplicate timestamps.
     readings = db.session.execute(
         select(
-            Reading.timestamp,
-            Reading.value,
-            Reading.sensor_type,
-            Reading.station_id,
+            Reading.id,
+            Reading.data_hora,
+            Reading.leitura,
+            Reading.sensor,
+            Reading.balao_id,
         )
         .where(
-            Reading.station_id == station_id,
-            Reading.sensor_type == sensor_type,
+            Reading.balao_id == balao_id,
+            Reading.sensor == sensor,
         )
-        .order_by(Reading.timestamp.desc())
+        .order_by(Reading.data_hora.desc(), Reading.id.desc())
     ).all()
 
     return render_template(
         "readings.html",
-        station_tree=tree,
-        station_id=station_id,
-        sensor_type=sensor_type,
-        station_sensors=station_sensors,
-        other_sensors=[sensor for sensor in station_sensors if sensor != sensor_type],
+        balloon_tree=tree,
+        balao_id=balao_id,
+        balao_nome=entry["nome"],
+        sensor=sensor,
+        balloon_sensors=balloon_sensors,
         readings=readings,
     )
 
@@ -97,6 +109,6 @@ def readings(station_id: int, sensor_type: str):
 @bp.app_errorhandler(404)
 def not_found(_error):
     return (
-        render_template("404.html", station_tree=station_tree()),
+        render_template("404.html", balloon_tree=balloon_tree()),
         404,
     )

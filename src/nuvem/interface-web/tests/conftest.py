@@ -8,7 +8,7 @@ import pytest
 from flask import Flask
 
 from interface_web import create_app, db
-from interface_web.models import Reading
+from interface_web.models import Balloon, Reading
 
 
 @pytest.fixture
@@ -36,53 +36,58 @@ def client(app: Flask):
 
 @pytest.fixture
 def readings(app: Flask) -> list[Reading]:
-    """Seed a known set of readings covering two stations and four sensors."""
+    """Seed a known set of readings covering two balloons and four sensors."""
+    balloons = [
+        Balloon(id=1, nome="Balão 1"),
+        Balloon(id=2, nome="Balão 2"),
+    ]
     rows = [
         Reading(
-            station_id=1,
-            sensor_type="Temperatura",
-            value=20,
-            timestamp=datetime(2026, 11, 4, 10, 0, 0),
+            balao_id=1,
+            sensor="Temperatura",
+            leitura=20,
+            data_hora=datetime(2026, 11, 4, 10, 0, 0),
         ),
         Reading(
-            station_id=1,
-            sensor_type="Temperatura",
-            value=22,
-            timestamp=datetime(2026, 11, 4, 12, 0, 0),
+            balao_id=1,
+            sensor="Temperatura",
+            leitura=22,
+            data_hora=datetime(2026, 11, 4, 12, 0, 0),
         ),
         Reading(
-            station_id=1,
-            sensor_type="Umidade",
-            value=80,
-            timestamp=datetime(2026, 11, 4, 12, 0, 0),
+            balao_id=1,
+            sensor="Umidade",
+            leitura=80,
+            data_hora=datetime(2026, 11, 4, 12, 0, 0),
         ),
         Reading(
-            station_id=1,
-            sensor_type="Pressão",
-            value=1013,
-            timestamp=datetime(2026, 11, 4, 11, 0, 0),
+            balao_id=1,
+            sensor="Pressão",
+            leitura=1013,
+            data_hora=datetime(2026, 11, 4, 11, 0, 0),
         ),
         Reading(
-            station_id=1,
-            sensor_type="Gás",
-            value=400,
-            timestamp=datetime(2026, 11, 4, 9, 0, 0),
+            balao_id=1,
+            sensor="Gás",
+            leitura=400,
+            data_hora=datetime(2026, 11, 4, 9, 0, 0),
         ),
         Reading(
-            station_id=2,
-            sensor_type="Temperatura",
-            value=15,
-            timestamp=datetime(2026, 11, 4, 11, 30, 0),
+            balao_id=2,
+            sensor="Temperatura",
+            leitura=15,
+            data_hora=datetime(2026, 11, 4, 11, 30, 0),
         ),
         Reading(
-            station_id=2,
-            sensor_type="Umidade",
-            value=70,
-            timestamp=datetime(2026, 11, 4, 11, 45, 0),
+            balao_id=2,
+            sensor="Umidade",
+            leitura=70,
+            data_hora=datetime(2026, 11, 4, 11, 45, 0),
         ),
     ]
 
     with app.app_context():
+        db.session.add_all(balloons)
         db.session.add_all(rows)
         db.session.commit()
 

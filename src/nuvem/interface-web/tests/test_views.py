@@ -3,13 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from html.parser import HTMLParser
 
-import pytest
 from flask import Flask, url_for
 from sqlalchemy import inspect
-from sqlalchemy.exc import IntegrityError
 
 from interface_web import db
-from interface_web.models import Reading
+from interface_web.models import Balloon, Reading
 
 
 class ReadingsTableParser(HTMLParser):
@@ -52,41 +50,40 @@ def parse_readings_table(html: str) -> list[list[str]]:
     return parser.rows
 
 
-def href_for(app: Flask, station_id: int, sensor_type: str) -> str:
+def href_for(app: Flask, balao_id: int, sensor: str) -> str:
     with app.test_request_context():
         return url_for(
             "main.readings",
-            station_id=station_id,
-            sensor_type=sensor_type,
+            balao_id=balao_id,
+            sensor=sensor,
         )
 
 
-def station_href(app: Flask, station_id: int) -> str:
+def balloon_href(app: Flask, balao_id: int) -> str:
     with app.test_request_context():
-        return url_for("main.station", station_id=station_id)
+        return url_for("main.balloon", balao_id=balao_id)
 
 
 def test_database_schema_is_created(app: Flask) -> None:
     with app.app_context():
         inspector = inspect(db.engine)
-        assert "readings" in inspector.get_table_names()
-        columns = {column["name"] for column in inspector.get_columns("readings")}
-        assert columns == {"sensor_type", "value", "station_id", "timestamp"}
+        tables = set(inspector.get_table_names())
+        assert {"Baloes", "Leituras"} <= tables
 
+        balloon_columns = {
+            column["name"] for column in inspector.get_columns("Baloes")
+        }
+        assert balloon_columns == {"id", "nome", "criado_em"}
 
-def test_negative_values_are_rejected(app: Flask) -> None:
-    with app.app_context():
-        db.session.add(
-            Reading(
-                station_id=9,
-                sensor_type="Temperatura",
-                value=-1,
-                timestamp=datetime(2026, 11, 4, 12, 0, 0),
-            )
-        )
-        with pytest.raises(IntegrityError):
-            db.session.commit()
-        db.session.rollback()
+        reading_columns = {
+            column["name"] for column in inspector.get_columns("Leituras")
+        }
+        assert reading_columns == {"id", "balao_id", "sensor", "leitura", "data_hora"}
+
+        index_names = {
+            index["name"] for index in inspector.get_indexes("Leituras")
+        }
+        assert {"idx_leituras_balao", "idx_leituras_data"} <= index_names
 
 
 def test_empty_database_shows_empty_state(client) -> None:
@@ -95,11 +92,11 @@ def test_empty_database_shows_empty_state(client) -> None:
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Nenhuma leitura encontrada" in body
-    assert "Nenhuma estação encontrada" in body
+    assert "Nenhum balão encontrado" in body
     assert "readings-table" not in body
 
 
-def test_index_lists_stations_as_responsive_cards(seeded_client, app: Flask) -> None:
+def test_index_lists_balloons_as_responsive_cards(seeded_client, app: Flask) -> None:
     response = seeded_client.get("/")
 
     assert response.status_code == 200
@@ -108,48 +105,63 @@ def test_index_lists_stations_as_responsive_cards(seeded_client, app: Flask) -> 
     assert "col-12 col-sm-6 col-lg-4 col-xxl-3 d-flex" in body
     assert "card station-card" in body
 
-    for station_id in (1, 2):
-        assert f'href="{station_href(app, station_id)}"' in body
+    for balao_id in (1, 2):
+        assert f'href="{balloon_href(app, balao_id)}"' in body
 
-    assert "Estação 1" in body
-    assert "Estação 2" in body
+    assert "Balão 1" in body
+    assert "Balão 2" in body
 
 
-def test_station_page_lists_sensors_as_responsive_cards(
+def test_balloon_page_lists_sensors_as_responsive_cards(
     seeded_client, app: Flask
 ) -> None:
     response = seeded_client.get("/1")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Estação 1" in body
+    assert "Balão 1" in body
     assert 'class="row g-3"' in body
     assert "col-12 col-sm-6 col-lg-4 col-xxl-3 d-flex" in body
     assert "card station-card" in body
 
-    for sensor_type in ["Temperatura", "Umidade", "Pressão", "Gás"]:
-        assert f'href="{href_for(app, 1, sensor_type)}"' in body
+    for sensor in ["Temperatura", "Umidade", "Pressão", "Gás"]:
+        assert f'href="{href_for(app, 1, sensor)}"' in body
 
     assert "2 leituras" in body
     assert "1 leitura" in body
 
 
-def test_reading_page_breadcrumb_links_back_to_station(
+def test_balloon_page_without_readings_shows_empty_state(
+    client, app: Flask
+) -> None:
+    with app.app_context():
+        db.session.add(Balloon(id=7, nome="Balão Vazio"))
+        db.session.commit()
+
+    response = client.get("/7")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Balão Vazio" in body
+    assert "Nenhum sensor registrado para este balão" in body
+
+
+def test_reading_page_breadcrumb_links_back_to_balloon(
     seeded_client, app: Flask
 ) -> None:
     body = seeded_client.get("/1/Temperatura").get_data(as_text=True)
 
-    assert f'href="{station_href(app, 1)}"' in body
+    assert f'href="{balloon_href(app, 1)}"' in body
 
 
-def test_readings_sorted_by_timestamp_most_recent_first(seeded_client) -> None:
+def test_readings_sorted_by_data_hora_most_recent_first(seeded_client) -> None:
     response = seeded_client.get("/1/Temperatura")
     assert response.status_code == 200
 
     rows = parse_readings_table(response.get_data(as_text=True))
     header, *data = rows
 
-    assert header == ["#", "Timestamp", "Valor", "Sensor", "Estação"]
+    assert header == ["#", "Data/Hora", "Leitura", "Sensor", "Balão"]
     assert [row[1] for row in data] == [
         "2026-11-04 12:00:00",
         "2026-11-04 10:00:00",
@@ -166,26 +178,27 @@ def test_readings_table_shows_all_columns(seeded_client) -> None:
         "2026-11-04 12:00:00",
         "22",
         "Temperatura",
-        "1",
+        "Balão 1",
     ]
     assert data[1] == [
         "2",
         "2026-11-04 10:00:00",
         "20",
         "Temperatura",
-        "1",
+        "Balão 1",
     ]
 
 
 def test_all_readings_are_rendered_without_pagination(client, app: Flask) -> None:
     with app.app_context():
+        db.session.add(Balloon(id=3, nome="Balão 3"))
         db.session.add_all(
             [
                 Reading(
-                    station_id=3,
-                    sensor_type="Temperatura",
-                    value=index,
-                    timestamp=datetime(2026, 1, 1, 0, index, 0),
+                    balao_id=3,
+                    sensor="Temperatura",
+                    leitura=index,
+                    data_hora=datetime(2026, 1, 1, 0, index, 0),
                 )
                 for index in range(25)
             ]
@@ -197,14 +210,14 @@ def test_all_readings_are_rendered_without_pagination(client, app: Flask) -> Non
     assert len(rows) == 26  # 1 header + 25 readings
 
 
-def test_menu_tree_lists_every_station_and_sensor(seeded_client, app: Flask) -> None:
+def test_menu_tree_lists_every_balloon_and_sensor(seeded_client, app: Flask) -> None:
     body = seeded_client.get("/1/Temperatura").get_data(as_text=True)
 
-    assert "Estação 1" in body
-    assert "Estação 2" in body
-    assert f'href="{station_href(app, 1)}"' in body
-    assert f'href="{station_href(app, 2)}"' in body
-    for station_id, sensor_type in [
+    assert "Balão 1" in body
+    assert "Balão 2" in body
+    assert f'href="{balloon_href(app, 1)}"' in body
+    assert f'href="{balloon_href(app, 2)}"' in body
+    for balao_id, sensor in [
         (1, "Temperatura"),
         (1, "Umidade"),
         (1, "Pressão"),
@@ -212,27 +225,27 @@ def test_menu_tree_lists_every_station_and_sensor(seeded_client, app: Flask) -> 
         (2, "Temperatura"),
         (2, "Umidade"),
     ]:
-        assert f'href="{href_for(app, station_id, sensor_type)}"' in body
+        assert f'href="{href_for(app, balao_id, sensor)}"' in body
 
     assert "station-tree-node is-current" in body
     assert "station-tree-leaf active" in body
 
 
-def test_navbar_links_to_other_sensors_of_current_station(
+def test_navbar_links_to_other_sensors_of_current_balloon(
     seeded_client, app: Flask
 ) -> None:
     body = seeded_client.get("/1/Temperatura").get_data(as_text=True)
     navbar = body.split("navbar-station-links", 1)[1].split("</div>", 1)[0]
 
-    for sensor_type in ["Temperatura", "Umidade", "Pressão", "Gás"]:
-        assert f'href="{href_for(app, 1, sensor_type)}"' in navbar
+    for sensor in ["Temperatura", "Umidade", "Pressão", "Gás"]:
+        assert f'href="{href_for(app, 1, sensor)}"' in navbar
 
-    # Sensors belonging to another station must not appear in this station's
+    # Sensors belonging to another balloon must not appear in this balloon's
     # shortcut list inside the navbar.
     assert f'href="{href_for(app, 2, "Temperatura")}"' not in navbar
 
 
-def test_each_station_sensor_pair_has_a_page(seeded_client, app: Flask) -> None:
+def test_each_balloon_sensor_pair_has_a_page(seeded_client, app: Flask) -> None:
     pairs = [
         (1, "Temperatura"),
         (1, "Umidade"),
@@ -242,12 +255,12 @@ def test_each_station_sensor_pair_has_a_page(seeded_client, app: Flask) -> None:
         (2, "Umidade"),
     ]
 
-    for station_id, sensor_type in pairs:
-        response = seeded_client.get(href_for(app, station_id, sensor_type))
-        assert response.status_code == 200, (station_id, sensor_type)
+    for balao_id, sensor in pairs:
+        response = seeded_client.get(href_for(app, balao_id, sensor))
+        assert response.status_code == 200, (balao_id, sensor)
 
 
-def test_unicode_sensor_type_in_url(seeded_client, app: Flask) -> None:
+def test_unicode_sensor_name_in_url(seeded_client, app: Flask) -> None:
     response = seeded_client.get(href_for(app, 1, "Pressão"))
 
     assert response.status_code == 200
@@ -256,14 +269,14 @@ def test_unicode_sensor_type_in_url(seeded_client, app: Flask) -> None:
     assert "Pressão" in body
 
 
-def test_unknown_station_returns_404(seeded_client) -> None:
+def test_unknown_balloon_reading_page_returns_404(seeded_client) -> None:
     response = seeded_client.get("/99/Temperatura")
 
     assert response.status_code == 404
     assert "Página não encontrada" in response.get_data(as_text=True)
 
 
-def test_unknown_station_page_returns_404(seeded_client) -> None:
+def test_unknown_balloon_page_returns_404(seeded_client) -> None:
     response = seeded_client.get("/99")
 
     assert response.status_code == 404
