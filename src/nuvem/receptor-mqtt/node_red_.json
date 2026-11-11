@@ -1,0 +1,110 @@
+[
+    {
+        "id": "28e6de1a82e098fe",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "3919f0dbb5a6cb44",
+        "type": "mqtt in",
+        "z": "28e6de1a82e098fe",
+        "name": "",
+        "topic": "sensores",
+        "qos": "2",
+        "datatype": "json",
+        "broker": "4792771a3e2dfa19",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 240,
+        "y": 520,
+        "wires": [
+            [
+                "0cda606d3f7e7e97"
+            ]
+        ]
+    },
+    {
+        "id": "0cda606d3f7e7e97",
+        "type": "function",
+        "z": "28e6de1a82e098fe",
+        "name": "function 1",
+        "func": "let queries = [];\n\nif (msg.payload && Array.isArray(msg.payload.sensores)) {\n    msg.payload.sensores.forEach(item => {\n        queries.push({\n            topic: \"INSERT INTO leituras (balao_id, sensor, leitura) VALUES ($balao, $nome, $leitura);\",\n            payload: {\n                $balao: item.balao,\n                $nome: item.nome,\n                $leitura: item.leitura\n            }\n        });\n    });\n}\n\nreturn [queries];",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 500,
+        "y": 540,
+        "wires": [
+            [
+                "701d4d8fbb3cf761"
+            ]
+        ]
+    },
+    {
+        "id": "701d4d8fbb3cf761",
+        "type": "sqlite",
+        "z": "28e6de1a82e098fe",
+        "mydb": "1633b6d5893999a4",
+        "sqlquery": "msg.topic",
+        "sql": "",
+        "name": "",
+        "x": 740,
+        "y": 540,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "4792771a3e2dfa19",
+        "type": "mqtt-broker",
+        "name": "test.mosquitto.org",
+        "broker": "",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "1633b6d5893999a4",
+        "type": "sqlitedb",
+        "db": "src/nuvem/banco.db",
+        "mode": "RWC"
+    },
+    {
+        "id": "4545f29725ead2a6",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-node-sqlite": "2.0.1"
+        }
+    }
+]
