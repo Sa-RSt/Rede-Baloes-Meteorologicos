@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS Leituras (
     balao_id INTEGER NOT NULL,
     sensor VARCHAR(50) NOT NULL,
     leitura NUMERIC NOT NULL,
-    data_hora DATETIME DEFAULT CURRENT_TIMESTAMP
+    data_hora DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (balao_id) REFERENCES Balões(id)
 );
 
