@@ -1,23 +1,22 @@
-
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <HTTPClient.h>
 #include <SPI.h>
-#include <LoRa.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <MQTTClient.h>
+#include <ArduinoJson.h>
 
-// 1. CONFIGURAÇÕES DO WIFI
-const char* WIFI_SSID = "NOME_DO_WIFI";
-const char* WIFI_SENHA = "SENHA_DO_WIFI";
+// CONFIGURAÇÕES DO WIFI
+const char* WIFI_SSID = "Bo dia";
+const char* WIFI_SENHA = "euth1347";
 
-// 2. CONFIGURAÇÕES DA NUVEM
-// ThingSpeak
-const char* THINGSPEAK_WRITE_KEY = "SUA_WRITE_API_KEY";
-
-const char* THINGSPEAK_URL = "https://api.thingspeak.com/update";
+const char MQTT_BROKER_ADRRESS[] = "10.99.127.20";
+const int MQTT_BROKER_PORT = 1883;
+const char MQTT_CLIENT_ID[] = "CENTRO-COMANDO-esp32-001";
+const char MQTT_USERNAME[] = "";
+const char MQTT_PASSWORD[] = ""; 
+const char MQTT_TOPIC[] = "sensores";
 
 // Intervalo entre tentativas de envio
 constexpr unsigned long INTERVALO_NUVEM_MS = 20000UL;
@@ -36,7 +35,7 @@ constexpr int PIN_DIO0 = 26;
 constexpr long FREQUENCIA_LORA = 915500000L;
 
 // Identificador esperado do balão
-const char* ID_BALAO_ESPERADO = "BALAO01";
+const char* ID_BALAO_ESPERADO = "1";
 
 // 4. ESTRUTURA DOS DADOS METEOROLÓGICOS
 struct DadosMeteorologicos {
@@ -63,6 +62,9 @@ bool wifiConectadoAnteriormente = false;
 
 unsigned long ultimaTentativaNuvem = 0;
 unsigned long ultimaTentativaWiFi = 0;
+
+WiFiClient cliente;
+MQTTClient mqtt = MQTTClient(256);
 
 // 5. CONEXÃO WIFI
 void iniciarWiFi() {
@@ -108,38 +110,29 @@ void verificarWiFi() {
   }
 }
 
-// 6. INICIALIZAÇÃO DO LORA
-void iniciarLoRa() {
-  SPI.begin(
-    PIN_SCK,
-    PIN_MISO,
-    PIN_MOSI,
-    PIN_NSS
-  );
+void conectarMQTT() {
+  mqtt.begin(MQTT_BROKER_ADRRESS, MQTT_BROKER_PORT, cliente);
 
-  LoRa.setPins(
-    PIN_NSS,
-    PIN_RST,
-    PIN_DIO0
-  );
+  Serial.print("[MQTT] Conectando");
 
-  if (!LoRa.begin(FREQUENCIA_LORA)) {
+  while (!mqtt.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+    Serial.print(".");
+    delay(100);
+  }
+  Serial.println();
 
-    Serial.println("[ERRO] Falha ao iniciar LoRa!");
-
-    while (true) {
-      delay(1000);
-    }
+  if (!mqtt.connected()) {
+    Serial.println("[MQTT] Timeout!");
+    return;
   }
 
-  // Mesmos parâmetros utilizados no balão
-  LoRa.setSpreadingFactor(9);
-  LoRa.setSignalBandwidth(125000);
-  LoRa.setCodingRate4(5);
-  LoRa.setSyncWord(0x12);
-  LoRa.enableCrc();
+  // Subscribe to a topic, the incoming messages are processed by messageHandler() function
+  if (mqtt.subscribe(MQTT_TOPIC))
+    Serial.print("[MQTT] Subscribed: ");
+  else
+    Serial.print("[MQTT] Failed to subscribe: ");
 
-  Serial.println("[OK] LoRa inicializado!");
+  Serial.println(MQTT_TOPIC);
 }
 
 // 7. INTERPRETAÇÃO DOS DADOS RECEBIDOS
@@ -260,7 +253,7 @@ void mostrarDados(const DadosMeteorologicos& dados) {
 
 // 9. RECEPÇÃO VIA LORA
 void receberDadosLoRa() {
-
+/*
   int tamanhoPacote = LoRa.parsePacket();
 
   if (tamanhoPacote == 0) {
@@ -284,7 +277,8 @@ void receberDadosLoRa() {
   while (LoRa.available()) {
     pacote += (char)LoRa.read();
   }
-
+*/
+  String pacote = "0,1,27.67,69.420,100000.33,11.11,4.76";
   Serial.print("[LoRa] Recebido: ");
   Serial.println(pacote);
 
@@ -297,8 +291,8 @@ void receberDadosLoRa() {
   }
 
   // Qualidade do sinal recebido
-  dados.rssi = LoRa.packetRssi();
-  dados.snr = LoRa.packetSnr();
+  dados.rssi = -1;  // TODO
+  dados.snr = 1;  // TODO
 
   mostrarDados(dados);
 
@@ -322,75 +316,32 @@ bool enviarParaNuvem(const DadosMeteorologicos& dados) {
     return false;
   }
 
-  WiFiClientSecure cliente;
+  StaticJsonDocument<500> message;
+  message["sensores"][0]["nome"] = "Temperatura";
+  message["sensores"][0]["leitura"] = dados.temperatura;
+  message["sensores"][0]["balao"] = dados.id;
+  message["sensores"][1]["nome"] = "Umidade";
+  message["sensores"][1]["leitura"] = dados.umidade;
+  message["sensores"][1]["balao"] = dados.id;
+  message["sensores"][2]["nome"] = "Pressão";
+  message["sensores"][2]["leitura"] = dados.pressao;
+  message["sensores"][2]["balao"] = dados.id;
+  message["sensores"][3]["nome"] = "Altitude";
+  message["sensores"][3]["leitura"] = dados.altitude;
+  message["sensores"][3]["balao"] = dados.id;
+  message["sensores"][4]["nome"] = "Bateria";
+  message["sensores"][4]["leitura"] = dados.bateria;
+  message["sensores"][4]["balao"] = dados.id;
+  char messageBuffer[1024];
+  serializeJson(message, messageBuffer);
 
-  // SOMENTE PARA PROTOTIPAGEM:
-  // HTTPS sem validação do certificado.
-  // Substituir por validação TLS em produção.
-  cliente.setInsecure();
+  mqtt.publish(MQTT_TOPIC, messageBuffer);
 
-  HTTPClient http;
-
-  if (!http.begin(cliente, THINGSPEAK_URL)) {
-
-    Serial.println("[Nuvem] Falha ao iniciar HTTPS.");
-    return false;
-  }
-
-  http.setTimeout(8000);
-
-  http.addHeader(
-    "Content-Type",
-    "application/x-www-form-urlencoded"
-  );
-
-  // Monta o corpo HTTP com os 8 campos
-  String corpo = "api_key=";
-  corpo += THINGSPEAK_WRITE_KEY;
-
-  corpo += "&field1=" + String(dados.temperatura, 2);
-  corpo += "&field2=" + String(dados.umidade, 2);
-  corpo += "&field3=" + String(dados.pressao, 2);
-  corpo += "&field4=" + String(dados.altitude, 2);
-  corpo += "&field5=" + String(dados.bateria, 2);
-  corpo += "&field6=" + String(dados.rssi);
-  corpo += "&field7=" + String(dados.snr, 2);
-  corpo += "&field8=" + String(dados.sequencia);
-
-  corpo += "&status=" + String(dados.id);
-
-  Serial.println("[Nuvem] Enviando leitura...");
-
-  int codigoHTTP = http.POST(corpo);
-
-  String resposta = "";
-
-  if (codigoHTTP > 0) {
-    resposta = http.getString();
-    resposta.trim();
-  }
-
-  http.end();
-
-  // ThingSpeak retorna o ID da entrada
-  // ou "0" em caso de falha de gravacao.
-  if (codigoHTTP == 200 &&
-      resposta.length() > 0 &&
-      resposta != "0") {
-
-    Serial.print("[Nuvem] Leitura gravada! ID=");
-    Serial.println(resposta);
-
-    return true;
-  }
-
-  Serial.printf(
-    "[Nuvem] Falha. HTTP=%d Resposta=%s\n",
-    codigoHTTP,
-    resposta.c_str()
-  );
-
-  return false;
+  Serial.println("ESP32 - sent to MQTT:");
+  Serial.print("- topic: ");
+  Serial.println(MQTT_TOPIC);
+  Serial.print("- payload:");
+  Serial.println(messageBuffer);
 }
 
 // 11. CONTROLE DE ENVIO PARA A NUVEM
@@ -436,7 +387,7 @@ void setup() {
   Serial.println(" CENTRAL METEOROLOGICA - ESP32");
   Serial.println("================================");
 
-  iniciarLoRa();
+    // TODO iniciarLoRa();
   iniciarWiFi();
 
   Serial.println("[Sistema] Central inicializada.");
@@ -444,6 +395,7 @@ void setup() {
 }
 
 void loop() {
+  mqtt.loop();
   // Mantem a conexao Wi-Fi
   verificarWiFi();
 
