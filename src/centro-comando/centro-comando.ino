@@ -11,7 +11,7 @@
 const char* WIFI_SSID = "Bo dia";
 const char* WIFI_SENHA = "euth1347";
 
-const char MQTT_BROKER_ADRRESS[] = "10.99.127.20";
+const char MQTT_BROKER_ADRRESS[] = "10.99.127.209";
 const int MQTT_BROKER_PORT = 1883;
 const char MQTT_CLIENT_ID[] = "CENTRO-COMANDO-esp32-001";
 const char MQTT_USERNAME[] = "";
@@ -125,14 +125,6 @@ void conectarMQTT() {
     Serial.println("[MQTT] Timeout!");
     return;
   }
-
-  // Subscribe to a topic, the incoming messages are processed by messageHandler() function
-  if (mqtt.subscribe(MQTT_TOPIC))
-    Serial.print("[MQTT] Subscribed: ");
-  else
-    Serial.print("[MQTT] Failed to subscribe: ");
-
-  Serial.println(MQTT_TOPIC);
 }
 
 // 7. INTERPRETAÇÃO DOS DADOS RECEBIDOS
@@ -389,6 +381,11 @@ void setup() {
 
     // TODO iniciarLoRa();
   iniciarWiFi();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  conectarMQTT();
 
   Serial.println("[Sistema] Central inicializada.");
   Serial.println("[Sistema] Aguardando pacotes...");
@@ -398,6 +395,9 @@ void loop() {
   mqtt.loop();
   // Mantem a conexao Wi-Fi
   verificarWiFi();
+  if (!mqtt.connected()) {
+    conectarMQTT();
+  }
 
   // Recebe e interpreta mensagens LoRa
   receberDadosLoRa();
