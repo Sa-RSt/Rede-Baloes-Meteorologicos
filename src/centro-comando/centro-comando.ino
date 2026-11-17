@@ -323,6 +323,7 @@ bool enviarParaNuvem(const DadosMeteorologicos& dados) {
   Serial.println(MQTT_TOPIC);
   Serial.print("- payload:");
   Serial.println(messageBuffer);
+  return true;
 }
 
 // 11. CONTROLE DE ENVIO PARA A NUVEM
