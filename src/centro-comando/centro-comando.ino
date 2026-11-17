@@ -333,6 +333,7 @@ void processarEnvioNuvem() {
   }
 
   if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Nuvem] nao pode enviar dados! Wi-Fi desconectado");
     return;
   }
 
