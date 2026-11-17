@@ -18,9 +18,6 @@ const char MQTT_USERNAME[] = "";
 const char MQTT_PASSWORD[] = ""; 
 const char MQTT_TOPIC[] = "sensores";
 
-// Intervalo entre tentativas de envio
-constexpr unsigned long INTERVALO_NUVEM_MS = 20000UL;
-
 // Intervalo de verificação do Wi-Fi
 constexpr unsigned long INTERVALO_WIFI_MS = 10000UL;
 
@@ -33,9 +30,6 @@ constexpr int PIN_RST  = 14;
 constexpr int PIN_DIO0 = 26;
 
 constexpr long FREQUENCIA_LORA = 915500000L;
-
-// Identificador esperado do balão
-const char* ID_BALAO_ESPERADO = "1";
 
 // 4. ESTRUTURA DOS DADOS METEOROLÓGICOS
 struct DadosMeteorologicos {
@@ -150,13 +144,8 @@ bool interpretarPacote(
     &caractereExtra
   );
 
-  // Exige exatamente 7 campos
-  if (campos != 7) {
-    return false;
-  }
-
-  // Verifica a origem da mensagem
-  if (strcmp(dados.id, ID_BALAO_ESPERADO) != 0) {
+  // Exige exatamente 7 campos + caractere extra
+  if (campos != 8) {
     return false;
   }
 
@@ -347,13 +336,6 @@ void processarEnvioNuvem() {
   }
 
   unsigned long agora = millis();
-
-  // Respeita o intervalo minimo configurado
-
-  if (jaTentouEnviar && agora - ultimaTentativaNuvem < INTERVALO_NUVEM_MS) {
-
-    return;
-  }
 
   ultimaTentativaNuvem = agora;
   jaTentouEnviar = true;
