@@ -259,7 +259,7 @@ void receberDadosLoRa() {
     pacote += (char)LoRa.read();
   }
 */
-  String pacote = "0,1,27.67,69.420,100000.33,11.11,4.76";
+  String pacote = "1,1,27.67,69.420,300.33,11.11,4.76\n";
   Serial.print("[LoRa] Recebido: ");
   Serial.println(pacote);
 
