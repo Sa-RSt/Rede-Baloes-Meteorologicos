@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Balões &middot; Rede de Balões Meteorológicos{% endblock %}
+
+{% block content %}
+<main class="container py-4">
+  {% if balloon_tree %}
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-3">
+    <div>
+      <h1 class="h3 mb-1">Balões</h1>
+      <p class="text-muted mb-0">
+        Selecione um balão para ver os sensores disponíveis.
+      </p>
+    </div>
+    <span class="badge text-bg-primary fs-6">
+      {{ balloon_tree|length }} bal{{ 'ões' if balloon_tree|length != 1 else 'ão' }}
+    </span>
+  </div>
+
+  <div class="row g-3">
+    {% for tree_balao_id, balloon in balloon_tree.items() %}
+    <div class="col-12 col-sm-6 col-lg-4 col-xxl-3 d-flex">
+      <a class="card station-card h-100 w-100 text-decoration-none"
+         href="{{ url_for('main.balloon', balao_id=tree_balao_id) }}">
+        <div class="card-body d-flex flex-column">
+          <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+            <h2 class="h5 card-title mb-0">{{ balloon.nome }}</h2>
+            <span class="badge rounded-pill text-bg-light">
+              {{ balloon.sensors|length }} sensor{{ 'es' if balloon.sensors|length != 1 else '' }}
+            </span>
+          </div>
+
+          <p class="card-text text-muted small mb-3">
+            {% if balloon.sensors %}
+              {{ balloon.sensors|join(', ') }}
+            {% else %}
+              Nenhum sensor registrado.
+            {% endif %}
+          </p>
+
+          <span class="text-primary fw-semibold small mt-auto">
+            Abrir balão <span aria-hidden="true">&rarr;</span>
+          </span>
+        </div>
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-8">
+      <div class="card shadow-sm">
+        <div class="card-body p-4 p-md-5">
+          <h1 class="h3 mb-3">Nenhuma leitura encontrada</h1>
+          <p class="mb-3">
+            O banco <code>sqlite.db</code> ainda não possui balões na tabela
+            <code>Baloes</code>.
+          </p>
+          <p class="text-muted mb-4">
+            Assim que os centros de comando enviarem dados, os balões e os
+            sensores aparecerão automaticamente no menu acima.
+          </p>
+          <a class="btn btn-primary" href="{{ url_for('main.index') }}">Atualizar</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</main>
+{% endblock %}

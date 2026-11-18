@@ -1,0 +1,147 @@
+:root {
+  --tree-indent: 1.25rem;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+}
+
+.navbar-station-links .btn {
+  white-space: nowrap;
+}
+
+.station-tree-bar {
+  box-shadow: 0 0.125rem 0.25rem rgb(0 0 0 / 0.04);
+}
+
+.station-tree {
+  max-height: 42vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.station-tree-node {
+  border-top: 1px solid var(--bs-border-color);
+}
+
+.station-tree-node:first-child {
+  border-top: 0;
+}
+
+.station-tree-header {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0;
+}
+
+.station-tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: var(--bs-border-radius-sm);
+  background: transparent;
+  color: var(--bs-body-color);
+}
+
+.station-tree-toggle:hover {
+  background-color: var(--bs-secondary-bg);
+}
+
+.station-tree-station {
+  flex: 1 1 auto;
+  padding: 0.35rem 0.25rem;
+  border-radius: var(--bs-border-radius-sm);
+  color: var(--bs-body-color);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.station-tree-station:hover {
+  background-color: var(--bs-secondary-bg);
+  color: var(--bs-emphasis-color);
+}
+
+.station-tree-header .badge {
+  margin-left: auto;
+  margin-right: 0.25rem;
+}
+
+.tree-chevron {
+  display: inline-block;
+  width: 1rem;
+  color: var(--bs-secondary-color);
+  transition: transform 0.15s ease-in-out;
+}
+
+.station-tree-node.is-open > .station-tree-header .tree-chevron {
+  transform: rotate(90deg);
+}
+
+.station-tree-leaves {
+  border-left: 1px dashed var(--bs-border-color);
+}
+
+.station-tree-leaf {
+  display: block;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--bs-border-radius-sm);
+  color: var(--bs-body-color);
+  text-decoration: none;
+}
+
+.station-tree-leaf:hover {
+  background-color: var(--bs-secondary-bg);
+  color: var(--bs-emphasis-color);
+}
+
+.station-tree-leaf.active {
+  background-color: var(--bs-primary);
+  color: #fff;
+}
+
+.station-card {
+  color: inherit;
+  transition:
+    transform 0.15s ease-in-out,
+    box-shadow 0.15s ease-in-out;
+}
+
+.station-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0.5rem 1rem rgb(0 0 0 / 0.12);
+}
+
+.readings-table-wrapper {
+  max-height: 68vh;
+  overflow-y: auto;
+}
+
+#readings-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-shadow: inset 0 -1px 0 var(--bs-border-color);
+}
+
+.reading-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+@media (max-width: 575.98px) {
+  .station-tree {
+    max-height: 32vh;
+  }
+
+  .readings-table-wrapper {
+    max-height: none;
+  }
+}
