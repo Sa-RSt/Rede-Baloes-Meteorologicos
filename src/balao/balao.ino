@@ -1,19 +1,21 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <LoRa.h>
 #include <math.h>
+#include <string.h>
 
 // Defina como 1 e instale Adafruit BMP280, Adafruit DHT e Unified Sensor para ativar.
-#define HABILITAR_SENSORES_REAIS 0
+#define HABILITAR_SENSORES_REAIS 1
 #if HABILITAR_SENSORES_REAIS
 #include <Wire.h>
 #include <Adafruit_BMP280.h>
 #include <DHT.h>
 #endif
 
-constexpr int PIN_BMP280_SDA = 21;
-constexpr int PIN_BMP280_SCL = 22;
-constexpr int PIN_DHT11_DATA = 27;
+#include "LoRaWan_APP.h"
+
+constexpr int PIN_BMP280_SDA = 41;
+constexpr int PIN_BMP280_SCL = 42;
+constexpr int PIN_DHT11_DATA = 19;
 constexpr float PRESSAO_NIVEL_MAR_HPA = 1013.25f;
 
 #if HABILITAR_SENSORES_REAIS
@@ -37,18 +39,49 @@ constexpr long FREQUENCIA_LORA = 915500000L;
 constexpr unsigned long INTERVALO_MS = 20000UL;
 
 // Identificador único do balão
-constexpr char ID_BALAO[] = "BALAO01";
+constexpr char ID_BALAO[] = "1";
 
 // true  = dados simulados
 // false = sensores reais
-constexpr bool MODO_SIMULACAO = true;
+constexpr bool MODO_SIMULACAO = false;
+
+#define TX_OUTPUT_POWER                             5        // dBm
+
+#define LORA_BANDWIDTH                              0         // [0: 125 kHz,
+                                                              //  1: 250 kHz,
+                                                              //  2: 500 kHz,
+                                                              //  3: Reserved]
+#define LORA_SPREADING_FACTOR                       7         // [SF7..SF12]
+#define LORA_CODINGRATE                             1         // [1: 4/5,
+                                                              //  2: 4/6,
+                                                              //  3: 4/7,
+                                                              //  4: 4/8]
+#define LORA_PREAMBLE_LENGTH                        8         // Same for Tx and Rx
+#define LORA_SYMBOL_TIMEOUT                         0         // Symbols
+#define LORA_FIX_LENGTH_PAYLOAD_ON                  false
+#define LORA_IQ_INVERSION_ON                        false
+
+
+#define RX_TIMEOUT_VALUE                            1000
+#define BUFFER_SIZE                                 50 // Define the payload size here
+
+char txpacket[BUFFER_SIZE];
+
+double txNumber;
+
+bool lora_idle=true;
+
+static RadioEvents_t RadioEvents;
+void OnTxDone( void );
+void OnTxTimeout( void );
+
 
 struct DadosMeteorologicos {
   float temperatura; // Celsius
   float umidade;     // %
   float pressao;     // hPa
   float altitude;    // metros
-  float bateria;     // volts
+  float bateria;
 };
 
 uint32_t sequencia = 0;
@@ -115,7 +148,7 @@ float lerBateria() {
   // TODO: medir tensão da bateria
   // Para o ADC, utilizar divisor de tensão apropriado.
 
-  return NAN;
+  return 4.9f;
 }
 
 // Gera valores fictícios para testar a comunicação.
@@ -175,22 +208,14 @@ bool transmitirDados(const DadosMeteorologicos &dados) {
                   String(dados.umidade, 2) + "," +
                   String(dados.pressao, 2) + "," +
                   String(dados.altitude, 2) + "," +
-                  String(dados.bateria, 2);
-
-  // Inicia transmissão
-  if (!LoRa.beginPacket()) {
-    Serial.println("[LoRa] Falha ao iniciar pacote.");
-    return false;
+                  String(dados.bateria, 2) + "\n";
+  if (lora_idle) {
+    delay(1000);
+		txNumber += 0.01;
+    memcpy(txpacket, pacote.c_str(), pacote.length());
+		Radio.Send( (uint8_t *)txpacket, pacote.length() ); //send the package out	
+    lora_idle = false;
   }
-
-  LoRa.print(pacote);
-
-  // Finaliza e transmite o pacote
-  if (LoRa.endPacket() != 1) {
-    Serial.println("[LoRa] Falha na transmissao.");
-    return false;
-  }
-
   Serial.print("[LoRa] Enviado: ");
   Serial.println(pacote);
 
@@ -209,40 +234,20 @@ void setup() {
   Serial.println("==============================");
 
   if (!MODO_SIMULACAO) inicializarSensores();
-  // Configura comunicação SPI
-  SPI.begin(
-    PIN_SCK,
-    PIN_MISO,
-    PIN_MOSI,
-    PIN_NSS
-  );
 
-  // Configura pinos do módulo LoRa
-  LoRa.setPins(
-    PIN_NSS,
-    PIN_RST,
-    PIN_DIO0
-  );
+  Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
 
-  // Inicializa rádio LoRa
-  if (!LoRa.begin(FREQUENCIA_LORA)) {
+  txNumber=0;
 
-    Serial.println("[ERRO] Falha ao iniciar LoRa!");
-
-    while (true) {
-      delay(1000);
-    }
-  }
-
-  // Parametros da comunicação
-  LoRa.setSpreadingFactor(9);
-  LoRa.setSignalBandwidth(125000);
-  LoRa.setCodingRate4(5);
-  LoRa.setSyncWord(0x12);
-  LoRa.setTxPower(10);
-  LoRa.enableCrc();
-
-  Serial.println("[OK] LoRa inicializado!");
+  RadioEvents.TxDone = OnTxDone;
+  RadioEvents.TxTimeout = OnTxTimeout;
+  
+  Radio.Init( &RadioEvents );
+  Radio.SetChannel( FREQUENCIA_LORA );
+  Radio.SetTxConfig( MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
+                                LORA_SPREADING_FACTOR, LORA_CODINGRATE,
+                                LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
+                                true, 0, 0, LORA_IQ_INVERSION_ON, 3000 ); 
 
   if (MODO_SIMULACAO) {
     Serial.println("[INFO] Modo simulacao ativo.");
@@ -255,7 +260,7 @@ void setup() {
 }
 
 void loop() {
-
+  Radio.IrqProcess();
   // Verifica o intervalo de transmissão
   if (millis() - ultimaTentativa < INTERVALO_MS) {
     delay(10);
@@ -279,4 +284,17 @@ void loop() {
   if (transmitirDados(dados)) {
     sequencia++;
   }
+}
+
+void OnTxDone( void )
+{
+	Serial.println("TX done......");
+	lora_idle = true;
+}
+
+void OnTxTimeout( void )
+{
+    Radio.Sleep( );
+    Serial.println("TX Timeout......");
+    lora_idle = true;
 }
