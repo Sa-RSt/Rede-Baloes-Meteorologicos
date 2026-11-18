@@ -20,6 +20,7 @@ const char MQTT_TOPIC[] = "sensores";
 
 // Intervalo de verificação do Wi-Fi
 constexpr unsigned long INTERVALO_WIFI_MS = 10000UL;
+constexpr unsigned long INTERVALO_MQTT_MS = 5000UL;
 
 // 3. CONFIGURAÇÕES DO LORA
 constexpr int PIN_SCK  = 18;
@@ -56,6 +57,7 @@ bool wifiConectadoAnteriormente = false;
 
 unsigned long ultimaTentativaNuvem = 0;
 unsigned long ultimaTentativaWiFi = 0;
+unsigned long ultimaTentativaMQTT = 0;
 
 WiFiClient cliente;
 MQTTClient mqtt = MQTTClient(256);
@@ -105,19 +107,21 @@ void verificarWiFi() {
 }
 
 void conectarMQTT() {
-  mqtt.begin(MQTT_BROKER_ADRRESS, MQTT_BROKER_PORT, cliente);
+  if (WiFi.status() != WL_CONNECTED || mqtt.connected()) {
+    return;
+  }
+
+  unsigned long agora = millis();
+  if (agora - ultimaTentativaMQTT < INTERVALO_MQTT_MS) {
+    return;
+  }
+  ultimaTentativaMQTT = agora;
 
   Serial.print("[MQTT] Conectando");
-
-  while (!mqtt.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
-    Serial.print(".");
-    delay(100);
-  }
-  Serial.println();
-
-  if (!mqtt.connected()) {
-    Serial.println("[MQTT] Timeout!");
-    return;
+  if (mqtt.connect(MQTT_CLIENT_ID, MQTT_USERNAME, MQTT_PASSWORD)) {
+    Serial.println(" conectado!");
+  } else {
+    Serial.println(" falhou; nova tentativa em alguns segundos.");
   }
 }
 
@@ -289,11 +293,16 @@ void receberDadosLoRa() {
   leituraPendente = true;
 }
 
-// 10. ENVIO PARA O THINGSPEAK
+// 10. PUBLICAÇÃO DOS DADOS NO BROKER MQTT
 bool enviarParaNuvem(const DadosMeteorologicos& dados) {
   if (WiFi.status() != WL_CONNECTED) {
 
-    Serial.println("[Nuvem] Wi-Fi indisponivel.");
+    Serial.println("[MQTT] Wi-Fi indisponivel.");
+    return false;
+  }
+
+  if (!mqtt.connected()) {
+    Serial.println("[MQTT] Broker desconectado.");
     return false;
   }
 
@@ -316,10 +325,13 @@ bool enviarParaNuvem(const DadosMeteorologicos& dados) {
   char messageBuffer[1024];
   serializeJson(message, messageBuffer);
 
-  mqtt.publish(MQTT_TOPIC, messageBuffer);
+  if (!mqtt.publish(MQTT_TOPIC, messageBuffer)) {
+    Serial.println("[MQTT] Falha ao publicar a mensagem.");
+    return false;
+  }
 
-  Serial.println("ESP32 - sent to MQTT:");
-  Serial.print("- topic: ");
+  Serial.println("[MQTT] Mensagem publicada:");
+  Serial.print("- topico: ");
   Serial.println(MQTT_TOPIC);
   Serial.print("- payload:");
   Serial.println(messageBuffer);
@@ -369,6 +381,7 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
+  mqtt.begin(MQTT_BROKER_ADRRESS, MQTT_BROKER_PORT, cliente);
   conectarMQTT();
 
   Serial.println("[Sistema] Central inicializada.");
@@ -379,9 +392,7 @@ void loop() {
   mqtt.loop();
   // Mantem a conexao Wi-Fi
   verificarWiFi();
-  if (!mqtt.connected()) {
-    conectarMQTT();
-  }
+  conectarMQTT();
 
   // Recebe e interpreta mensagens LoRa
   receberDadosLoRa();

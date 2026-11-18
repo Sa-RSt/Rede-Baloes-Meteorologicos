@@ -3,6 +3,26 @@
 #include <LoRa.h>
 #include <math.h>
 
+// Defina como 1 e instale Adafruit BMP280, Adafruit DHT e Unified Sensor para ativar.
+#define HABILITAR_SENSORES_REAIS 0
+#if HABILITAR_SENSORES_REAIS
+#include <Wire.h>
+#include <Adafruit_BMP280.h>
+#include <DHT.h>
+#endif
+
+constexpr int PIN_BMP280_SDA = 21;
+constexpr int PIN_BMP280_SCL = 22;
+constexpr int PIN_DHT11_DATA = 27;
+constexpr float PRESSAO_NIVEL_MAR_HPA = 1013.25f;
+
+#if HABILITAR_SENSORES_REAIS
+Adafruit_BMP280 bmp280;
+DHT dht11(PIN_DHT11_DATA, DHT11);
+bool bmp280Disponivel = false;
+bool dht11Disponivel = false;
+#endif
+
 constexpr int PIN_SCK  = 18;
 constexpr int PIN_MISO = 19;
 constexpr int PIN_MOSI = 23;
@@ -34,31 +54,61 @@ struct DadosMeteorologicos {
 uint32_t sequencia = 0;
 unsigned long ultimaTentativa = 0;
 
-// TODO: implementar as leituras quando os sensores forem definidos.
+void inicializarSensores() {
+#if HABILITAR_SENSORES_REAIS
+  Wire.begin(PIN_BMP280_SDA, PIN_BMP280_SCL);
+  bmp280Disponivel = bmp280.begin(0x76);
+  if (!bmp280Disponivel) bmp280Disponivel = bmp280.begin(0x77);
+  Serial.println(bmp280Disponivel ? "[OK] BMP280 inicializado." : "[ERRO] BMP280 nao encontrado (0x76/0x77).");
+  dht11.begin();
+  dht11Disponivel = true;
+  Serial.println("[OK] DHT11 inicializado.");
+#endif
+}
 
 float lerTemperatura() {
-  // TODO: ler temperatura do sensor
-  // Exemplo: return sensor.readTemperature();
-
+#if HABILITAR_SENSORES_REAIS
+  if (!bmp280Disponivel) return NAN;
+  return bmp280.readTemperature();
+#else
   return NAN;
+#endif
 }
 
 float lerUmidade() {
-  // TODO: ler umidade relativa do sensor
-
+#if HABILITAR_SENSORES_REAIS
+  if (!dht11Disponivel) return NAN;
+  return dht11.readHumidity();
+#else
   return NAN;
+#endif
+}
+
+float lerTemperaturaDHT11() {
+#if HABILITAR_SENSORES_REAIS
+  if (!dht11Disponivel) return NAN;
+  return dht11.readTemperature();
+#else
+  return NAN;
+#endif
 }
 
 float lerPressao() {
-  // TODO: ler pressao atmosferica em hPa
-
+#if HABILITAR_SENSORES_REAIS
+  if (!bmp280Disponivel) return NAN;
+  return bmp280.readPressure() / 100.0f;
+#else
   return NAN;
+#endif
 }
 
 float lerAltitude() {
-  // TODO: obter altitude por GPS ou calculo barometrico
-
+#if HABILITAR_SENSORES_REAIS
+  if (!bmp280Disponivel) return NAN;
+  return bmp280.readAltitude(PRESSAO_NIVEL_MAR_HPA);
+#else
   return NAN;
+#endif
 }
 
 float lerBateria() {
@@ -158,7 +208,7 @@ void setup() {
   Serial.println(" BALAO METEOROLOGICO - ESP32");
   Serial.println("==============================");
 
-  // TODO: inicializar sensores reais aqui.
+  if (!MODO_SIMULACAO) inicializarSensores();
   // Configura comunicação SPI
   SPI.begin(
     PIN_SCK,
