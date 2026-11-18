@@ -15,7 +15,7 @@
         "topic": "sensores",
         "qos": "2",
         "datatype": "json",
-        "broker": "",
+        "broker": "4792771a3e2dfa19",
         "nl": false,
         "rap": true,
         "rh": 0,
@@ -33,7 +33,7 @@
         "type": "function",
         "z": "28e6de1a82e098fe",
         "name": "function 1",
-        "func": "\nreturn msg;",
+        "func": "let queries = [];\n\nif (msg.payload && Array.isArray(msg.payload.sensores)) {\n    msg.payload.sensores.forEach(item => {\n        const balao = Number(item.balao);\n        const sensor = String(item.nome).replace(/'/g, \"''\");\n        const leitura = Number(item.leitura);\n\n        queries.push({\n            topic: `INSERT INTO Leituras (balao_id, sensor, leitura) VALUES (${balao}, '${sensor}', ${leitura});`\n        });\n    });\n}\n\nreturn [queries];",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -43,7 +43,68 @@
         "x": 500,
         "y": 540,
         "wires": [
+            [
+                "701d4d8fbb3cf761"
+            ]
+        ]
+    },
+    {
+        "id": "701d4d8fbb3cf761",
+        "type": "sqlite",
+        "z": "28e6de1a82e098fe",
+        "mydb": "1633b6d5893999a4",
+        "sqlquery": "msg.topic",
+        "sql": "",
+        "name": "",
+        "x": 700,
+        "y": 540,
+        "wires": [
             []
         ]
+    },
+    {
+        "id": "4792771a3e2dfa19",
+        "type": "mqtt-broker",
+        "name": "mqtt local",
+        "broker": "localhost",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "1633b6d5893999a4",
+        "type": "sqlitedb",
+        "db": "sqlite.db",
+        "mode": "RWC"
+    },
+    {
+        "id": "dfd816758a1d106d",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-node-sqlite": "2.0.1"
+        }
     }
 ]
