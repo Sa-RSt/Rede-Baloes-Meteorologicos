@@ -63,11 +63,9 @@ constexpr bool MODO_SIMULACAO = false;
 
 
 #define RX_TIMEOUT_VALUE                            1000
-#define BUFFER_SIZE                                 50 // Define the payload size here
+#define BUFFER_SIZE                                 128 // Define the payload size here
 
 char txpacket[BUFFER_SIZE];
-
-double txNumber;
 
 bool lora_idle=true;
 
@@ -144,13 +142,6 @@ float lerAltitude() {
 #endif
 }
 
-float lerBateria() {
-  // TODO: medir tensão da bateria
-  // Para o ADC, utilizar divisor de tensão apropriado.
-
-  return 4.9f;
-}
-
 // Gera valores fictícios para testar a comunicação.
 void gerarDadosSimulados(DadosMeteorologicos &dados) {
   dados.temperatura = random(150, 320) / 10.0f;
@@ -161,31 +152,24 @@ void gerarDadosSimulados(DadosMeteorologicos &dados) {
 
   // Aproximação barométrica para simulação
   dados.pressao = 1013.25f * powf(1.0f - dados.altitude / 44330.0f, 5.255f);
-
-  dados.bateria = 3.70f + random(0, 50) / 100.0f;
 }
 
 // Decide entre simulação e sensores reais.
 bool obterLeituras(DadosMeteorologicos &dados) {
-
   if (MODO_SIMULACAO) {
     gerarDadosSimulados(dados);
-  } else {
+  } 
+  else {
     dados.temperatura = lerTemperatura();
     dados.umidade = lerUmidade();
     dados.pressao = lerPressao();
     dados.altitude = lerAltitude();
-    dados.bateria = lerBateria();
   }
-
-  // Verifica se todos os valores são válidos.
-  // Evita transmitir leituras ausentes ou absurdas.
 
   return isfinite(dados.temperatura) &&
          isfinite(dados.umidade) &&
          isfinite(dados.pressao) &&
          isfinite(dados.altitude) &&
-         isfinite(dados.bateria) &&
          dados.temperatura >= -100.0f &&
          dados.temperatura <= 100.0f &&
          dados.umidade >= 0.0f &&
@@ -193,37 +177,43 @@ bool obterLeituras(DadosMeteorologicos &dados) {
          dados.pressao >= 100.0f &&
          dados.pressao <= 1200.0f &&
          dados.altitude >= -500.0f &&
-         dados.altitude <= 60000.0f &&
-         dados.bateria >= 0.0f &&
-         dados.bateria <= 5.0f;
+         dados.altitude <= 60000.0f;
 }
 
 bool transmitirDados(const DadosMeteorologicos &dados) {
-  // Formato CSV:
-  // ID,sequencia,temperatura,umidade,pressao,altitude,bateria
+  if (!lora_idle) {
+    Serial.println("[LoRa] Radio ocupado.");
+    return false;
+  }
 
+  // ID,sequencia,temperatura,umidade,pressao,altitude
   String pacote = String(ID_BALAO) + "," +
                   String(sequencia) + "," +
                   String(dados.temperatura, 2) + "," +
                   String(dados.umidade, 2) + "," +
                   String(dados.pressao, 2) + "," +
-                  String(dados.altitude, 2) + "," +
-                  String(dados.bateria, 2) + "\n";
-  if (lora_idle) {
-    delay(1000);
-		txNumber += 0.01;
-    memcpy(txpacket, pacote.c_str(), pacote.length());
-		Radio.Send( (uint8_t *)txpacket, pacote.length() ); //send the package out	
-    lora_idle = false;
+                  String(dados.altitude, 2);
+
+  if (pacote.length() >= BUFFER_SIZE) {
+    Serial.println("[ERRO] Pacote maior que o buffer.");
+    return false;
   }
-  Serial.print("[LoRa] Enviado: ");
+
+  size_t tamanho = pacote.length();
+
+  memcpy(txpacket, pacote.c_str(), tamanho);
+  txpacket[tamanho] = '\0';
+
+  lora_idle = false;
+  Radio.Send((uint8_t *)txpacket, tamanho);
+
+  Serial.print("[LoRa] Transmissao iniciada: ");
   Serial.println(pacote);
 
   return true;
 }
 
 void setup() {
-
   Serial.begin(115200);
   delay(300);
 
@@ -236,8 +226,6 @@ void setup() {
   if (!MODO_SIMULACAO) inicializarSensores();
 
   Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
-
-  txNumber=0;
 
   RadioEvents.TxDone = OnTxDone;
   RadioEvents.TxTimeout = OnTxTimeout;

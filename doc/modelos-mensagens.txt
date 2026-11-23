@@ -1,20 +1,19 @@
-### [ Mensagem MQTT: centro de comando → nuvem ] ###
+### [ Mensagem LoRa: balão -> centro de comando ] ###
 
-topico: sensores
-{
-    "sensores": [
-      {"nome": "Gás", "leitura": 4095, "balao": 0},
-      {"nome": "Umidade", "leitura": 4095, "balao": 0},
-      {"nome": "Temperatura", "leitura": 4095, "balao": 0},
-      {"nome": "Pressão", "leitura": 4095, "balao": 0},
-      {"nome": "Gás", "leitura": 4095, "balao": 254},
-      {"nome": "Umidade", "leitura": 4095, "balao": 254},
-      {"nome": "Temperatura", "leitura": 4095, "balao": 254},
-      {"nome": "Pressão", "leitura": 4095, "balao": 254},
-    ]
-}
+Formato CSV:
 
-### [ Mensagem Lora: balão → centro de comando ] ###
+ID,sequencia,temperatura,umidade,pressao,altitude
 
-ID balão (1 byte) | Sensores (4 x 12 bits = 48 bits = 6 bytes) | XOR (1 byte)
-Sensores = gas << 36 | umidade << 24 | temperatura << 12 | pressao
+Exemplo:
+1,1,27.67,69.42,1003.33,111.11
+
+Campos:
+- ID: identificador do balão
+- sequencia: número da transmissão
+- temperatura: graus Celsius
+- umidade: porcentagem
+- pressao: hPa
+- altitude: metros
+
+A leitura da bateria não está implementada e não
+é enviada no protocolo atual.

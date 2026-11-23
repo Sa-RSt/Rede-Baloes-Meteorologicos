@@ -6,6 +6,7 @@
 #include <string.h>
 #include <MQTTClient.h>
 #include <ArduinoJson.h>
+#include "LoRaWan_APP.h"
 
 // CONFIGURAÇÕES DO WIFI
 const char* WIFI_SSID = "Bo dia";
@@ -22,15 +23,29 @@ const char MQTT_TOPIC[] = "sensores";
 constexpr unsigned long INTERVALO_WIFI_MS = 10000UL;
 constexpr unsigned long INTERVALO_MQTT_MS = 5000UL;
 
-// 3. CONFIGURAÇÕES DO LORA
-constexpr int PIN_SCK  = 18;
-constexpr int PIN_MISO = 19;
-constexpr int PIN_MOSI = 23;
-constexpr int PIN_NSS  = 5;
-constexpr int PIN_RST  = 14;
-constexpr int PIN_DIO0 = 26;
+// 3. CONFIGURACOES LORA - HELTEC
 
 constexpr long FREQUENCIA_LORA = 915500000L;
+
+#define LORA_BANDWIDTH              0
+#define LORA_SPREADING_FACTOR       7
+#define LORA_CODINGRATE             1
+#define LORA_PREAMBLE_LENGTH        8
+#define LORA_SYMBOL_TIMEOUT         0
+#define LORA_FIX_LENGTH_PAYLOAD_ON  false
+#define LORA_IQ_INVERSION_ON        false
+
+constexpr size_t BUFFER_LORA = 128;
+
+char pacoteRecebido[BUFFER_LORA];
+
+bool pacotePendenteLoRa = false;
+bool loraOcioso = true;
+
+int16_t rssiRecebido = 0;
+int8_t snrRecebido = 0;
+
+static RadioEvents_t radioEvents;
 
 // 4. ESTRUTURA DOS DADOS METEOROLÓGICOS
 struct DadosMeteorologicos {
@@ -42,7 +57,6 @@ struct DadosMeteorologicos {
   float umidade;
   float pressao;
   float altitude;
-  float bateria;
 
   int rssi;
   float snr;
@@ -127,58 +141,43 @@ void conectarMQTT() {
 
 // 7. INTERPRETAÇÃO DOS DADOS RECEBIDOS
 // Formato esperado:
-// ID,seq,temperatura,umidade,pressao,altitude,bateria
+// ID,seq,temperatura,umidade,pressao,altitude
 bool interpretarPacote(
   const String& pacote,
   DadosMeteorologicos& dados
 ) {
-  char caractereExtra;
+  int fim = 0;
 
   int campos = sscanf(
     pacote.c_str(),
-    "%15[^,],%lu,%f,%f,%f,%f,%f%c",
-
+    "%15[^,],%lu,%f,%f,%f,%f %n",
     dados.id,
     &dados.sequencia,
     &dados.temperatura,
     &dados.umidade,
     &dados.pressao,
     &dados.altitude,
-    &dados.bateria,
-    &caractereExtra
+    &fim
   );
 
-  // Exige exatamente 7 campos + caractere extra
-  if (campos != 8) {
+  if (campos != 6 ||
+      fim == 0 ||
+      pacote.c_str()[fim] != '\0') {
     return false;
   }
 
-  // Verifica valores inválidos
-  if (!isfinite(dados.temperatura) ||
-      !isfinite(dados.umidade) ||
-      !isfinite(dados.pressao) ||
-      !isfinite(dados.altitude) ||
-      !isfinite(dados.bateria)) {
-
-    return false;
-  }
-
-  // Limites básicos de consistência
-  if (dados.temperatura < -100.0f ||
-      dados.temperatura > 100.0f ||
-      dados.umidade < 0.0f ||
-      dados.umidade > 100.0f ||
-      dados.pressao < 100.0f ||
-      dados.pressao > 1200.0f ||
-      dados.altitude < -500.0f ||
-      dados.altitude > 60000.0f ||
-      dados.bateria < 0.0f ||
-      dados.bateria > 5.0f) {
-
-    return false;
-  }
-
-  return true;
+  return isfinite(dados.temperatura) &&
+         isfinite(dados.umidade) &&
+         isfinite(dados.pressao) &&
+         isfinite(dados.altitude) &&
+         dados.temperatura >= -100.0f &&
+         dados.temperatura <= 100.0f &&
+         dados.umidade >= 0.0f &&
+         dados.umidade <= 100.0f &&
+         dados.pressao >= 100.0f &&
+         dados.pressao <= 1200.0f &&
+         dados.altitude >= -500.0f &&
+         dados.altitude <= 60000.0f;
 }
 
 // 8. EXIBIÇÃO DOS DADOS
@@ -219,11 +218,6 @@ void mostrarDados(const DadosMeteorologicos& dados) {
   );
 
   Serial.printf(
-    "Bateria: %.2f V\n",
-    dados.bateria
-  );
-
-  Serial.printf(
     "RSSI: %d dBm\n",
     dados.rssi
   );
@@ -238,51 +232,29 @@ void mostrarDados(const DadosMeteorologicos& dados) {
 
 // 9. RECEPÇÃO VIA LORA
 void receberDadosLoRa() {
-/*
-  int tamanhoPacote = LoRa.parsePacket();
-
-  if (tamanhoPacote == 0) {
+  if (!pacotePendenteLoRa) {
     return;
   }
 
-  // Limita o tamanho aceito
-  if (tamanhoPacote > 120) {
+  pacotePendenteLoRa = false;
 
-    while (LoRa.available()) {
-      LoRa.read();
-    }
+  String pacote = String(pacoteRecebido);
 
-    Serial.println("[LoRa] Pacote muito grande.");
-    return;
-  }
-
-  String pacote;
-  pacote.reserve(121);
-
-  while (LoRa.available()) {
-    pacote += (char)LoRa.read();
-  }
-*/
-  String pacote = "1,1,27.67,69.420,300.33,11.11,4.76\n";
   Serial.print("[LoRa] Recebido: ");
   Serial.println(pacote);
 
   DadosMeteorologicos dados = {};
 
   if (!interpretarPacote(pacote, dados)) {
-
     Serial.println("[ERRO] Pacote invalido.");
     return;
   }
 
-  // Qualidade do sinal recebido
-  dados.rssi = -1;  // TODO
-  dados.snr = 1;  // TODO
+  dados.rssi = rssiRecebido;
+  dados.snr = snrRecebido;
 
   mostrarDados(dados);
 
-  // Guarda a leitura para envio na nuvem.
-  // Se houver outra pendente, a nova substitui a antiga.
   if (leituraPendente) {
     Serial.println(
       "[INFO] Leitura pendente substituida."
@@ -319,9 +291,6 @@ bool enviarParaNuvem(const DadosMeteorologicos& dados) {
   message["sensores"][3]["nome"] = "Altitude";
   message["sensores"][3]["leitura"] = dados.altitude;
   message["sensores"][3]["balao"] = dados.id;
-  message["sensores"][4]["nome"] = "Bateria";
-  message["sensores"][4]["leitura"] = dados.bateria;
-  message["sensores"][4]["balao"] = dados.id;
   char messageBuffer[1024];
   serializeJson(message, messageBuffer);
 
@@ -366,6 +335,76 @@ void processarEnvioNuvem() {
   }
 }
 
+void OnRxDone(
+  uint8_t *payload,
+  uint16_t size,
+  int16_t rssi,
+  int8_t snr
+) {
+  Radio.Sleep();
+  loraOcioso = true;
+
+  if (size == 0 || size >= BUFFER_LORA) {
+    Serial.println("[LoRa] Tamanho de pacote invalido.");
+    return;
+  }
+
+  if (pacotePendenteLoRa) {
+    Serial.println("[LoRa] Pacote anterior ainda pendente.");
+    return;
+  }
+
+  memcpy(pacoteRecebido, payload, size);
+  pacoteRecebido[size] = '\0';
+
+  rssiRecebido = rssi;
+  snrRecebido = snr;
+
+  pacotePendenteLoRa = true;
+}
+
+void OnRxTimeout() {
+  Radio.Sleep();
+  loraOcioso = true;
+}
+
+void OnRxError() {
+  Radio.Sleep();
+  loraOcioso = true;
+
+  Serial.println("[LoRa] Erro na recepcao.");
+}
+
+void iniciarLoRa() {
+  Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
+
+  radioEvents.RxDone = OnRxDone;
+  radioEvents.RxTimeout = OnRxTimeout;
+  radioEvents.RxError = OnRxError;
+
+  Radio.Init(&radioEvents);
+  Radio.SetChannel(FREQUENCIA_LORA);
+
+  Radio.SetRxConfig(
+    MODEM_LORA,
+    LORA_BANDWIDTH,
+    LORA_SPREADING_FACTOR,
+    LORA_CODINGRATE,
+    0,
+    LORA_PREAMBLE_LENGTH,
+    LORA_SYMBOL_TIMEOUT,
+    LORA_FIX_LENGTH_PAYLOAD_ON,
+    0,
+    true,
+    0,
+    0,
+    LORA_IQ_INVERSION_ON,
+    true
+  );
+
+  Serial.println("[LoRa] Receptor inicializado.");
+}
+
 void setup() {
   Serial.begin(115200);
   delay(300);
@@ -375,12 +414,8 @@ void setup() {
   Serial.println(" CENTRAL METEOROLOGICA - ESP32");
   Serial.println("================================");
 
-    // TODO iniciarLoRa();
+  iniciarLoRa();
   iniciarWiFi();
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
   mqtt.begin(MQTT_BROKER_ADRRESS, MQTT_BROKER_PORT, cliente);
   conectarMQTT();
 
@@ -389,15 +424,21 @@ void setup() {
 }
 
 void loop() {
-  mqtt.loop();
-  // Mantem a conexao Wi-Fi
-  verificarWiFi();
-  conectarMQTT();
+  Radio.IrqProcess();
 
-  // Recebe e interpreta mensagens LoRa
   receberDadosLoRa();
 
-  // Envia leituras pendentes para a nuvem
+  if (loraOcioso) {
+    loraOcioso = false;
+    Radio.Rx(0);
+  }
+
+  verificarWiFi();
+
+  conectarMQTT();
+
+  mqtt.loop();
+
   processarEnvioNuvem();
 
   delay(10);
