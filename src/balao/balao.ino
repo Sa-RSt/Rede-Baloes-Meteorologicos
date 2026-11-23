@@ -1,7 +1,29 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <LoRa.h>
 #include <math.h>
+#include <string.h>
+
+// Defina como 1 e instale Adafruit BMP280, Adafruit DHT e Unified Sensor para ativar.
+#define HABILITAR_SENSORES_REAIS 1
+#if HABILITAR_SENSORES_REAIS
+#include <Wire.h>
+#include <Adafruit_BMP280.h>
+#include <DHT.h>
+#endif
+
+#include "LoRaWan_APP.h"
+
+constexpr int PIN_BMP280_SDA = 41;
+constexpr int PIN_BMP280_SCL = 42;
+constexpr int PIN_DHT11_DATA = 19;
+constexpr float PRESSAO_NIVEL_MAR_HPA = 1013.25f;
+
+#if HABILITAR_SENSORES_REAIS
+Adafruit_BMP280 bmp280;
+DHT dht11(PIN_DHT11_DATA, DHT11);
+bool bmp280Disponivel = false;
+bool dht11Disponivel = false;
+#endif
 
 constexpr int PIN_SCK  = 18;
 constexpr int PIN_MISO = 19;
@@ -17,55 +39,107 @@ constexpr long FREQUENCIA_LORA = 915500000L;
 constexpr unsigned long INTERVALO_MS = 20000UL;
 
 // Identificador único do balão
-constexpr char ID_BALAO[] = "BALAO01";
+constexpr char ID_BALAO[] = "1";
 
 // true  = dados simulados
 // false = sensores reais
-constexpr bool MODO_SIMULACAO = true;
+constexpr bool MODO_SIMULACAO = false;
+
+#define TX_OUTPUT_POWER                             5        // dBm
+
+#define LORA_BANDWIDTH                              0         // [0: 125 kHz,
+                                                              //  1: 250 kHz,
+                                                              //  2: 500 kHz,
+                                                              //  3: Reserved]
+#define LORA_SPREADING_FACTOR                       7         // [SF7..SF12]
+#define LORA_CODINGRATE                             1         // [1: 4/5,
+                                                              //  2: 4/6,
+                                                              //  3: 4/7,
+                                                              //  4: 4/8]
+#define LORA_PREAMBLE_LENGTH                        8         // Same for Tx and Rx
+#define LORA_SYMBOL_TIMEOUT                         0         // Symbols
+#define LORA_FIX_LENGTH_PAYLOAD_ON                  false
+#define LORA_IQ_INVERSION_ON                        false
+
+
+#define RX_TIMEOUT_VALUE                            1000
+#define BUFFER_SIZE                                 128 // Define the payload size here
+
+char txpacket[BUFFER_SIZE];
+
+bool lora_idle=true;
+
+static RadioEvents_t RadioEvents;
+void OnTxDone( void );
+void OnTxTimeout( void );
+
 
 struct DadosMeteorologicos {
   float temperatura; // Celsius
   float umidade;     // %
   float pressao;     // hPa
   float altitude;    // metros
-  float bateria;     // volts
+  float bateria;
 };
 
 uint32_t sequencia = 0;
 unsigned long ultimaTentativa = 0;
 
-// TODO: implementar as leituras quando os sensores forem definidos.
+void inicializarSensores() {
+#if HABILITAR_SENSORES_REAIS
+  Wire.begin(PIN_BMP280_SDA, PIN_BMP280_SCL);
+  bmp280Disponivel = bmp280.begin(0x76);
+  if (!bmp280Disponivel) bmp280Disponivel = bmp280.begin(0x77);
+  Serial.println(bmp280Disponivel ? "[OK] BMP280 inicializado." : "[ERRO] BMP280 nao encontrado (0x76/0x77).");
+  dht11.begin();
+  dht11Disponivel = true;
+  Serial.println("[OK] DHT11 inicializado.");
+#endif
+}
 
 float lerTemperatura() {
-  // TODO: ler temperatura do sensor
-  // Exemplo: return sensor.readTemperature();
-
+#if HABILITAR_SENSORES_REAIS
+  if (!bmp280Disponivel) return NAN;
+  return bmp280.readTemperature();
+#else
   return NAN;
+#endif
 }
 
 float lerUmidade() {
-  // TODO: ler umidade relativa do sensor
-
+#if HABILITAR_SENSORES_REAIS
+  if (!dht11Disponivel) return NAN;
+  return dht11.readHumidity();
+#else
   return NAN;
+#endif
+}
+
+float lerTemperaturaDHT11() {
+#if HABILITAR_SENSORES_REAIS
+  if (!dht11Disponivel) return NAN;
+  return dht11.readTemperature();
+#else
+  return NAN;
+#endif
 }
 
 float lerPressao() {
-  // TODO: ler pressao atmosferica em hPa
-
+#if HABILITAR_SENSORES_REAIS
+  if (!bmp280Disponivel) return NAN;
+  return bmp280.readPressure() / 100.0f;
+#else
   return NAN;
+#endif
 }
 
 float lerAltitude() {
-  // TODO: obter altitude por GPS ou calculo barometrico
-
+#if HABILITAR_SENSORES_REAIS
+  if (!bmp280Disponivel) return NAN;
+  return bmp280.readAltitude(PRESSAO_NIVEL_MAR_HPA);
+#else
   return NAN;
-}
-
-float lerBateria() {
-  // TODO: medir tensão da bateria
-  // Para o ADC, utilizar divisor de tensão apropriado.
-
-  return NAN;
+#endif
 }
 
 // Gera valores fictícios para testar a comunicação.
@@ -78,31 +152,24 @@ void gerarDadosSimulados(DadosMeteorologicos &dados) {
 
   // Aproximação barométrica para simulação
   dados.pressao = 1013.25f * powf(1.0f - dados.altitude / 44330.0f, 5.255f);
-
-  dados.bateria = 3.70f + random(0, 50) / 100.0f;
 }
 
 // Decide entre simulação e sensores reais.
 bool obterLeituras(DadosMeteorologicos &dados) {
-
   if (MODO_SIMULACAO) {
     gerarDadosSimulados(dados);
-  } else {
+  } 
+  else {
     dados.temperatura = lerTemperatura();
     dados.umidade = lerUmidade();
     dados.pressao = lerPressao();
     dados.altitude = lerAltitude();
-    dados.bateria = lerBateria();
   }
-
-  // Verifica se todos os valores são válidos.
-  // Evita transmitir leituras ausentes ou absurdas.
 
   return isfinite(dados.temperatura) &&
          isfinite(dados.umidade) &&
          isfinite(dados.pressao) &&
          isfinite(dados.altitude) &&
-         isfinite(dados.bateria) &&
          dados.temperatura >= -100.0f &&
          dados.temperatura <= 100.0f &&
          dados.umidade >= 0.0f &&
@@ -110,45 +177,43 @@ bool obterLeituras(DadosMeteorologicos &dados) {
          dados.pressao >= 100.0f &&
          dados.pressao <= 1200.0f &&
          dados.altitude >= -500.0f &&
-         dados.altitude <= 60000.0f &&
-         dados.bateria >= 0.0f &&
-         dados.bateria <= 5.0f;
+         dados.altitude <= 60000.0f;
 }
 
 bool transmitirDados(const DadosMeteorologicos &dados) {
-  // Formato CSV:
-  // ID,sequencia,temperatura,umidade,pressao,altitude,bateria
+  if (!lora_idle) {
+    Serial.println("[LoRa] Radio ocupado.");
+    return false;
+  }
 
+  // ID,sequencia,temperatura,umidade,pressao,altitude
   String pacote = String(ID_BALAO) + "," +
                   String(sequencia) + "," +
                   String(dados.temperatura, 2) + "," +
                   String(dados.umidade, 2) + "," +
                   String(dados.pressao, 2) + "," +
-                  String(dados.altitude, 2) + "," +
-                  String(dados.bateria, 2);
+                  String(dados.altitude, 2);
 
-  // Inicia transmissão
-  if (!LoRa.beginPacket()) {
-    Serial.println("[LoRa] Falha ao iniciar pacote.");
+  if (pacote.length() >= BUFFER_SIZE) {
+    Serial.println("[ERRO] Pacote maior que o buffer.");
     return false;
   }
 
-  LoRa.print(pacote);
+  size_t tamanho = pacote.length();
 
-  // Finaliza e transmite o pacote
-  if (LoRa.endPacket() != 1) {
-    Serial.println("[LoRa] Falha na transmissao.");
-    return false;
-  }
+  memcpy(txpacket, pacote.c_str(), tamanho);
+  txpacket[tamanho] = '\0';
 
-  Serial.print("[LoRa] Enviado: ");
+  lora_idle = false;
+  Radio.Send((uint8_t *)txpacket, tamanho);
+
+  Serial.print("[LoRa] Transmissao iniciada: ");
   Serial.println(pacote);
 
   return true;
 }
 
 void setup() {
-
   Serial.begin(115200);
   delay(300);
 
@@ -158,41 +223,19 @@ void setup() {
   Serial.println(" BALAO METEOROLOGICO - ESP32");
   Serial.println("==============================");
 
-  // TODO: inicializar sensores reais aqui.
-  // Configura comunicação SPI
-  SPI.begin(
-    PIN_SCK,
-    PIN_MISO,
-    PIN_MOSI,
-    PIN_NSS
-  );
+  if (!MODO_SIMULACAO) inicializarSensores();
 
-  // Configura pinos do módulo LoRa
-  LoRa.setPins(
-    PIN_NSS,
-    PIN_RST,
-    PIN_DIO0
-  );
+  Mcu.begin(HELTEC_BOARD,SLOW_CLK_TPYE);
 
-  // Inicializa rádio LoRa
-  if (!LoRa.begin(FREQUENCIA_LORA)) {
-
-    Serial.println("[ERRO] Falha ao iniciar LoRa!");
-
-    while (true) {
-      delay(1000);
-    }
-  }
-
-  // Parametros da comunicação
-  LoRa.setSpreadingFactor(9);
-  LoRa.setSignalBandwidth(125000);
-  LoRa.setCodingRate4(5);
-  LoRa.setSyncWord(0x12);
-  LoRa.setTxPower(10);
-  LoRa.enableCrc();
-
-  Serial.println("[OK] LoRa inicializado!");
+  RadioEvents.TxDone = OnTxDone;
+  RadioEvents.TxTimeout = OnTxTimeout;
+  
+  Radio.Init( &RadioEvents );
+  Radio.SetChannel( FREQUENCIA_LORA );
+  Radio.SetTxConfig( MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
+                                LORA_SPREADING_FACTOR, LORA_CODINGRATE,
+                                LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
+                                true, 0, 0, LORA_IQ_INVERSION_ON, 3000 ); 
 
   if (MODO_SIMULACAO) {
     Serial.println("[INFO] Modo simulacao ativo.");
@@ -205,7 +248,7 @@ void setup() {
 }
 
 void loop() {
-
+  Radio.IrqProcess();
   // Verifica o intervalo de transmissão
   if (millis() - ultimaTentativa < INTERVALO_MS) {
     delay(10);
@@ -229,4 +272,17 @@ void loop() {
   if (transmitirDados(dados)) {
     sequencia++;
   }
+}
+
+void OnTxDone( void )
+{
+	Serial.println("TX done......");
+	lora_idle = true;
+}
+
+void OnTxTimeout( void )
+{
+    Radio.Sleep( );
+    Serial.println("TX Timeout......");
+    lora_idle = true;
 }
